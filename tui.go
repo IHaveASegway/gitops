@@ -81,7 +81,11 @@ type tuiModel struct {
 func newTUIModel(baseDir string, repos []string) tuiModel {
 	names := make([]string, len(repos))
 	for i, r := range repos {
-		names[i] = filepath.Base(r)
+		if rel, err := filepath.Rel(baseDir, r); err == nil {
+			names[i] = rel
+		} else {
+			names[i] = filepath.Base(r)
+		}
 	}
 
 	ti := textinput.New()
@@ -302,8 +306,13 @@ func (m tuiModel) startExec() (tea.Model, tea.Cmd) {
 	cmds := make([]tea.Cmd, len(repos))
 	for i, r := range repos {
 		path := r
+		baseDir := m.baseDir
 		cmds[i] = func() tea.Msg {
-			return opResultMsg{result: fn(path)}
+			result := fn(path)
+			if rel, err := filepath.Rel(baseDir, path); err == nil {
+				result.Repo = rel
+			}
+			return opResultMsg{result: result}
 		}
 	}
 	return m, tea.Batch(append(cmds, m.spin.Tick)...)

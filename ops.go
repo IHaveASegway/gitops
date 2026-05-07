@@ -13,6 +13,8 @@ import (
 // Result holds the outcome of a git operation on a single repo.
 type Result struct {
 	Repo    string
+	Group   string
+	Skipped bool
 	Success bool
 	Output  string
 	Error   string
@@ -35,6 +37,47 @@ func discoverRepos(baseDir string) ([]string, error) {
 		}
 	}
 	return repos, nil
+}
+
+// discoverReposRecursive scans one level of subdirectories under baseDir for git repos.
+func discoverReposRecursive(baseDir string) ([]string, error) {
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read directory %s: %w", baseDir, err)
+	}
+	var repos []string
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		subDir := filepath.Join(baseDir, entry.Name())
+		gitDir := filepath.Join(subDir, ".git")
+		if info, err := os.Stat(gitDir); err == nil && info.IsDir() {
+			repos = append(repos, subDir)
+			continue
+		}
+		subRepos, err := discoverRepos(subDir)
+		if err != nil {
+			continue
+		}
+		repos = append(repos, subRepos...)
+	}
+	return repos, nil
+}
+
+// annotateGroups sets Group and Repo fields based on relative paths from baseDir.
+func annotateGroups(baseDir string, repos []string, results []Result) {
+	for i, repoPath := range repos {
+		rel, err := filepath.Rel(baseDir, repoPath)
+		if err != nil {
+			continue
+		}
+		dir := filepath.Dir(rel)
+		if dir != "." {
+			results[i].Group = dir
+			results[i].Repo = rel
+		}
+	}
 }
 
 // getDefaultBranch returns "main" or "master" depending on the repo.
@@ -76,20 +119,52 @@ func runGit(repoPath string, args ...string) (string, error) {
 	return output, nil
 }
 
+// getCurrentBranch returns the currently checked-out branch name.
+func getCurrentBranch(repoPath string) (string, error) {
+	out, err := runGit(repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 func opPull(repoPath string) Result {
 	repo := filepath.Base(repoPath)
-	branch := getDefaultBranch(repoPath)
+	defaultBranch := getDefaultBranch(repoPath)
 
-	if _, err := runGit(repoPath, "checkout", branch); err != nil {
-		return Result{Repo: repo, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
+	// Remember the current branch so we can switch back
+	originalBranch, err := getCurrentBranch(repoPath)
+	if err != nil {
+		return Result{Repo: repo, Error: fmt.Sprintf("get current branch: %v", err)}
 	}
+
+	needSwitch := originalBranch != defaultBranch
+
+	if needSwitch {
+		if _, err := runGit(repoPath, "checkout", defaultBranch); err != nil {
+			return Result{Repo: repo, Error: fmt.Sprintf("checkout %s: %v", defaultBranch, err)}
+		}
+	}
+
 	out, err := runGit(repoPath, "pull", "--ff-only")
 	if err != nil {
+		// Attempt to switch back even on pull failure
+		if needSwitch {
+			runGit(repoPath, "checkout", originalBranch)
+		}
 		return Result{Repo: repo, Error: fmt.Sprintf("pull: %v", err)}
 	}
 	if out == "" {
 		out = "Already up to date."
 	}
+
+	// Switch back to the original branch
+	if needSwitch {
+		if _, err := runGit(repoPath, "checkout", originalBranch); err != nil {
+			return Result{Repo: repo, Success: true, Output: out + fmt.Sprintf(" (warning: could not switch back to %s: %v)", originalBranch, err)}
+		}
+	}
+
 	return Result{Repo: repo, Success: true, Output: out}
 }
 
@@ -245,22 +320,55 @@ func runParallel(repos []string, op func(string) Result) []Result {
 	return results
 }
 
-func printResults(title string, results []Result) {
+func printResults(title string, results []Result, skipped int) {
 	fmt.Printf("\n  %s Results\n", title)
 	fmt.Printf("  %s\n", strings.Repeat("-", 58))
 
-	successes, failures := 0, 0
+	grouped := false
 	for _, r := range results {
-		if r.Success {
-			successes++
-			fmt.Printf("  \033[32m+\033[0m %-28s %s\n", r.Repo, r.Output)
-		} else {
-			failures++
-			fmt.Printf("  \033[31mx\033[0m %-28s %s\n", r.Repo, r.Error)
+		if r.Group != "" {
+			grouped = true
+			break
 		}
 	}
 
-	fmt.Printf("  %s\n", strings.Repeat("-", 58))
-	fmt.Printf("  Total: %d  \033[32mSuccess: %d\033[0m  \033[31mFailed: %d\033[0m\n\n",
-		len(results), successes, failures)
+	successes, failures := 0, 0
+	if grouped {
+		groupOrder := []string{}
+		groupMap := map[string][]Result{}
+		for _, r := range results {
+			g := r.Group
+			if _, exists := groupMap[g]; !exists {
+				groupOrder = append(groupOrder, g)
+			}
+			groupMap[g] = append(groupMap[g], r)
+		}
+		for _, g := range groupOrder {
+			fmt.Printf("\n  \033[1m%s/\033[0m\n", g)
+			for _, r := range groupMap[g] {
+				name := filepath.Base(r.Repo)
+				if r.Success {
+					successes++
+					fmt.Printf("    \033[32m+\033[0m %-26s %s\n", name, r.Output)
+				} else {
+					failures++
+					fmt.Printf("    \033[31mx\033[0m %-26s %s\n", name, r.Error)
+				}
+			}
+		}
+	} else {
+		for _, r := range results {
+			if r.Success {
+				successes++
+				fmt.Printf("  \033[32m+\033[0m %-28s %s\n", r.Repo, r.Output)
+			} else {
+				failures++
+				fmt.Printf("  \033[31mx\033[0m %-28s %s\n", r.Repo, r.Error)
+			}
+		}
+	}
+
+	fmt.Printf("\n  %s\n", strings.Repeat("-", 58))
+	fmt.Printf("  Total: %d  \033[32mSuccess: %d\033[0m  \033[31mFailed: %d\033[0m  Skipped: %d\n\n",
+		len(results), successes, failures, skipped)
 }
