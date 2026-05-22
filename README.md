@@ -8,13 +8,13 @@ Includes an interactive TUI and a headless CLI mode for scripting.
 
 ```bash
 # requires Go 1.21+
-go install github.com/joseph-peterson/gitops@latest
+go install github.com/ihaveasegway/gitops@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/joseph-peterson/gitops.git
+git clone https://github.com/ihaveasegway/gitops.git
 cd gitops
 go build -o gitops .
 sudo cp gitops /usr/local/bin/
