@@ -86,6 +86,7 @@ func typeText(t *testing.T, m Model, s string) Model {
 // that has finished loading their status.
 func fixture(t *testing.T) (string, Model) {
 	t.Helper()
+	testutil.Identity(t)
 	root := t.TempDir()
 	up := testutil.NewBare(t, root, "up")
 	base := filepath.Join(root, "base")

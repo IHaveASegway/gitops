@@ -13,6 +13,7 @@ import (
 // clone creates a clone of a fresh upstream and returns its path.
 func clone(t *testing.T) string {
 	t.Helper()
+	testutil.Identity(t)
 	root := t.TempDir()
 	up := testutil.NewBare(t, root, "up")
 	p := filepath.Join(root, "clone")

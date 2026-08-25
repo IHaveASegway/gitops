@@ -67,3 +67,14 @@ func FileURL(p string) string {
 	}
 	return "file://" + p
 }
+
+// Identity gives git an author/committer for the rest of the test so that
+// commits made by the code under test work on machines without a global
+// git configuration (such as CI runners).
+func Identity(t testing.TB) {
+	t.Helper()
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+}
