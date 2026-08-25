@@ -1,0 +1,35 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you run, and what did you expect instead?
+      placeholder: |
+        Ran `gitops init acme --dry-run` in ~/code and it ...
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Paste the relevant terminal output. Redact tokens and private repo names if needed.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: gitops version
+      description: Output of `gitops --version`
+      placeholder: gitops version v1.2.3
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, terminal, git version (`git --version`), and whether `gh` is installed
+      placeholder: macOS 15, iTerm2, git 2.50, gh 2.69
+    validations:
+      required: true
