@@ -6,7 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-25
+
 ### Added
+- Homebrew tap: `brew install IHaveASegway/tap/gitops` (published automatically by
+  GoReleaser on every release, macOS and Linux).
 - `gitops init <org>`: clone every repository of a GitHub organization or user
   into `<dir>/<org>/`. Re-running clones only what is missing. Detects existing
   checkouts of the same org nearby (differently named folders, loose clones,
@@ -51,5 +55,6 @@ All notable changes to this project are documented here. The format follows
 - Initial release: `pull`, `sync`, `reset`, `branch`, `push`, `checkout` and
   `status` across every repository in a directory, with an interactive TUI.
 
-[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/IHaveASegway/gitops/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/IHaveASegway/gitops/releases/tag/v0.1.0

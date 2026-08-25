@@ -20,6 +20,8 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X github.com/IHaveASegway/gitops/internal/buildinfo.version={{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
@@ -49,3 +51,31 @@ changelog:
 
 release:
   prerelease: auto
+
+# Homebrew: `brew install IHaveASegway/tap/gitops`. The cask is pushed to the
+# tap on every release over SSH with the HOMEBREW_TAP_DEPLOY_KEY secret (a
+# write-enabled deploy key that only works for the tap repository). Without
+# the key the cask is only written to dist/, so the release still succeeds.
+homebrew_casks:
+  - name: gitops
+    binaries: [gitops]
+    repository:
+      owner: IHaveASegway
+      name: homebrew-tap
+      branch: main
+      git:
+        url: git@github.com:IHaveASegway/homebrew-tap.git
+        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
+    directory: Casks
+    commit_msg_template: "gitops {{ .Tag }}"
+    homepage: https://github.com/IHaveASegway/gitops
+    description: Mass git operations across many repos, with a TUI and one-command org cloning
+    license: MIT
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_DEPLOY_KEY" }}false{{ else }}true{{ end }}'
+    # The binary is not notarized: clear Gatekeeper's quarantine flag after install.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gitops"]
+          end

@@ -11,11 +11,19 @@ Includes an interactive TUI, a headless CLI mode for scripting, and `gitops init
 
 ## Install
 
+**Homebrew** (macOS and Linux):
+
+```bash
+brew install IHaveASegway/tap/gitops
+```
+
+**Go:**
+
 ```bash
 go install github.com/IHaveASegway/gitops/cmd/gitops@latest
 ```
 
-Prebuilt binaries for Linux, macOS and Windows are on the [releases page](https://github.com/IHaveASegway/gitops/releases).
+Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are on the [releases page](https://github.com/IHaveASegway/gitops/releases), with checksums.
 
 Or build from source (Go 1.27+):
 

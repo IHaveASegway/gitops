@@ -96,8 +96,20 @@ model-driven test that asserts on `View()`.
 
 ## Releasing
 
-Releases are cut by tagging: `git tag v1.2.0 && git push origin v1.2.0`.
+1. Move the *Unreleased* section of `CHANGELOG.md` under the new version.
+2. Tag and push: `git tag v1.2.0 && git push origin v1.2.0`.
+
 The `Release` workflow runs GoReleaser, which builds archives for
-Linux/macOS/Windows on amd64/arm64, generates checksums and release notes,
-and stamps the version into the binary (`gitops --version`).
-`make snapshot` produces the same archives locally without publishing.
+Linux/macOS/Windows on amd64/arm64 (reproducible: `-trimpath`, commit
+timestamps), generates checksums and release notes, stamps the version into
+the binary (`gitops --version`), and pushes an updated cask to
+[IHaveASegway/homebrew-tap](https://github.com/IHaveASegway/homebrew-tap) so
+`brew install IHaveASegway/tap/gitops` (and `brew upgrade`) pick it up.
+
+The tap push authenticates over SSH with the `HOMEBREW_TAP_DEPLOY_KEY`
+repository secret: the private half of a write-enabled deploy key that is
+registered only on `homebrew-tap`, so it cannot touch anything else. Without
+it the release still succeeds and the cask is only written to `dist/`.
+
+`make snapshot` produces the same archives (and the cask under
+`dist/homebrew/`) locally without publishing anything.
