@@ -17,10 +17,26 @@ func TestParseDefaultBranchRef(t *testing.T) {
 		"origin/master":                   "master",
 		"refs/heads/main":                 "",
 		"":                                "",
+		"refs/remotes/origin/--force":     "", // option-shaped names are repository data
+		"origin/-f":                       "",
 	}
 	for in, want := range cases {
 		if got := parseDefaultBranchRef(in); got != want {
 			t.Errorf("%q: got %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestCheckRefArg(t *testing.T) {
+	// Accepts any real ref spelling; rejects only empty and option-shaped.
+	for _, ok := range []string{"main", "release/1.0", "origin/main", "HEAD~1", "@{-1}", "v1.2.3", "deadbeef"} {
+		if err := CheckRefArg(ok); err != nil {
+			t.Errorf("CheckRefArg(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "-f", "--mirror", "-"} {
+		if err := CheckRefArg(bad); err == nil {
+			t.Errorf("CheckRefArg(%q) = nil, want error", bad)
 		}
 	}
 }

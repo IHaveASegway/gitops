@@ -48,18 +48,18 @@ gitops sync -r crm,field-service
 
 ### Destructive Commands (require user confirmation before running)
 
-**reset** — DANGEROUS. Discards ALL uncommitted changes permanently (`git checkout .` + `git clean -fd`), force-checks out the default branch, and pulls. Uncommitted work is irrecoverably lost. Always confirm with the user before running this.
+**reset** — DANGEROUS. Discards ALL uncommitted changes permanently (`git checkout .` + `git clean -fd`), force-checks out the default branch, and pulls. Uncommitted work is irrecoverably lost. Always confirm with the user before running this. Non-interactive runs refuse (exit 2) without `-y/--yes`; only pass `-y` after the user has confirmed.
 
 ```bash
-gitops reset
-gitops reset -r crm,admin
+gitops reset -y
+gitops reset -y -r crm,admin
 ```
 
-**push** — Stages all changes (`git add -A`), commits with the provided message, and pushes to the remote. This pushes to whatever branch each repo is currently on. Confirm the commit message and target repos with the user.
+**push** — Stages all changes (`git add -A`, excluding macOS `.DS_Store` files), commits with the provided message, and pushes to the remote. This pushes to whatever branch each repo is currently on. Confirm the commit message and target repos with the user. Non-interactive runs refuse (exit 2) without `-y/--yes`; only pass `-y` after the user has confirmed.
 
 ```bash
-gitops push -m "fix: update dependencies"
-gitops push -m "chore: config update" -r crm,admin
+gitops push -y -m "fix: update dependencies"
+gitops push -y -m "chore: config update" -r crm,admin
 ```
 
 **branch** — Checks out the default branch, pulls latest, then creates a new branch. This modifies the branch state of every targeted repo.
@@ -89,7 +89,7 @@ gitops init acme -y --archived --no-forks --protocol ssh
 
 Accepted org forms: `https://github.com/acme`, `github.com/acme`, `acme`, `git@github.com:acme/repo.git`, GitHub Enterprise `https://ghe.example.com/acme`. Authentication comes from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth login`; without a token only public repos are listed.
 
-Exit codes: `0` ok, `1` at least one repo failed, `2` init refused (needs `-y`, or duplicate detected without `--force`), `130` interrupted.
+Exit codes: `0` ok, `1` at least one repo failed, `2` refused — init needs `-y` or detected a duplicate without `--force`, or reset/push ran non-interactively without `-y`, `130` interrupted.
 
 ## Flags
 
@@ -101,7 +101,7 @@ Exit codes: `0` ok, `1` at least one repo failed, `2` init refused (needs `-y`, 
 | `--name <branch>` | `-n` | Branch name, used by `branch` and `checkout`. |
 | `--message <msg>` | `-m` | Commit message, used by `push`. |
 
-`init` only: `--here`, `--protocol ssh|https`, `--archived`, `--no-forks`, `--dry-run`, `-y/--yes`, `--force`.
+`init`, `reset` and `push` accept `-y/--yes` to skip confirmation. `init` only: `--here`, `--protocol ssh|https`, `--archived`, `--no-forks`, `--dry-run`, `--force`.
 
 ## Behavior Notes
 

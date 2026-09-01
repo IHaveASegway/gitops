@@ -13,6 +13,7 @@ import (
 	"github.com/IHaveASegway/gitops/internal/format"
 	"github.com/IHaveASegway/gitops/internal/git"
 	"github.com/IHaveASegway/gitops/internal/github"
+	"github.com/IHaveASegway/gitops/internal/ops"
 )
 
 // openInput shows the text prompt of the current op with an initial value.
@@ -43,8 +44,13 @@ func (m Model) updateInput(key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch m.op().name {
-		case "branch", "checkout":
+		case "branch":
 			if err := git.CheckBranchName(value); err != nil {
+				m.inputErr = err.Error()
+				return m, nil
+			}
+		case "checkout":
+			if err := git.CheckRefArg(value); err != nil {
 				m.inputErr = err.Error()
 				return m, nil
 			}
@@ -86,7 +92,7 @@ func (m Model) renderInput() string {
 			"Private repos need a token: GH_TOKEN, GITHUB_TOKEN or gh auth login.",
 		}
 	case "push":
-		hints = []string{"Runs git add -A, git commit -m <message> and git push on each selected repo's current branch."}
+		hints = []string{"Stages all changes except " + ops.ExcludedJunk() + ", commits with <message> and pushes each selected repo's current branch."}
 	case "branch":
 		hints = []string{"Each repo checks out its default branch, pulls, then creates the branch from there."}
 	}
@@ -116,7 +122,8 @@ func loadInit(ref github.OwnerRef, gen int) tea.Cmd {
 			return initLoadedMsg{gen: gen, err: err}
 		}
 		opts := clone.Options{Host: ref.Host, Protocol: github.DefaultProtocol(ref.Host), Token: token}
-		return initLoadedMsg{gen: gen, owner: owner, repos: repos, opts: opts, tokenSrc: src}
+		return initLoadedMsg{gen: gen, owner: owner, repos: repos, opts: opts, tokenSrc: src,
+			apiBase: client.APIBase, overridden: client.Overridden()}
 	}
 }
 
@@ -135,6 +142,7 @@ func (m Model) handleInitLoaded(msg initLoadedMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	}
 	m.initOwner, m.initRepos, m.initOpts, m.tokenSrc = msg.owner, msg.repos, msg.opts, msg.tokenSrc
+	m.apiBase, m.apiOverride = msg.apiBase, msg.overridden
 	m.rebuildPlan(m.baseDir, false)
 	return m, nil
 }

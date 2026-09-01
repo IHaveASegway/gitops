@@ -40,6 +40,22 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# The checksums file is signed keylessly with cosign (Sigstore) using the
+# release workflow's OIDC identity, so tampering with any artifact is
+# detectable. The workflow pins cosign to v2.x, whose sign-blob writes the
+# .sig/.pem this config names. Verification instructions are in SECURITY.md.
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - --output-signature=${signature}
+      - --output-certificate=${certificate}
+      - --yes
+      - ${artifact}
+    artifacts: checksum
+    output: true
+
 changelog:
   sort: asc
   filters:
@@ -52,30 +68,36 @@ changelog:
 release:
   prerelease: auto
 
-# Homebrew: `brew install IHaveASegway/tap/gitops`. The cask is pushed to the
-# tap on every release over SSH with the HOMEBREW_TAP_DEPLOY_KEY secret (a
-# write-enabled deploy key that only works for the tap repository). Without
-# the key the cask is only written to dist/, so the release still succeeds.
-homebrew_casks:
+# Homebrew: `brew install IHaveASegway/tap/gitops`. The formula is pushed to
+# the tap on every release over SSH with the HOMEBREW_TAP_DEPLOY_KEY secret
+# (a write-enabled deploy key that only works for the tap repository).
+# Without the key the formula is only written to dist/, so the release still
+# succeeds.
+#
+# A formula is used deliberately even though GoReleaser deprecated `brews`
+# in favor of `homebrew_casks`: cask installs quarantine the downloaded
+# binary, and shipping un-notarized binaries as a cask requires a post-
+# install hook that strips com.apple.quarantine — disabling a Gatekeeper
+# control on users' machines. Formula installs are not quarantined, so no
+# security control has to be bypassed. Revisit if the binaries are ever
+# notarized.
+brews:
   - name: gitops
-    binaries: [gitops]
     repository:
       owner: IHaveASegway
       name: homebrew-tap
       branch: main
       git:
         url: git@github.com:IHaveASegway/homebrew-tap.git
-        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
-    directory: Casks
+        # Guarded so `make snapshot` works without the secret; skip_upload
+        # below is already true whenever the key is absent, so the empty
+        # value is never used to push.
+        private_key: '{{ with index .Env "HOMEBREW_TAP_DEPLOY_KEY" }}{{ . }}{{ end }}'
+    directory: Formula
     commit_msg_template: "gitops {{ .Tag }}"
     homepage: https://github.com/IHaveASegway/gitops
     description: Mass git operations across many repos, with a TUI and one-command org cloning
     license: MIT
     skip_upload: '{{ if index .Env "HOMEBREW_TAP_DEPLOY_KEY" }}false{{ else }}true{{ end }}'
-    # The binary is not notarized: clear Gatekeeper's quarantine flag after install.
-    hooks:
-      post:
-        install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gitops"]
-          end
+    test: |
+      system "#{bin}/gitops", "--version"

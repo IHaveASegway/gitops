@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/IHaveASegway/gitops/internal/format"
+	"github.com/IHaveASegway/gitops/internal/ops"
 )
 
 func (m Model) updateConfirm(key string) (tea.Model, tea.Cmd) {
@@ -65,6 +66,8 @@ func (m Model) renderConfirm() string {
 		auth := "no token — public repos only"
 		if m.initOpts.Token != "" {
 			auth = "token from " + m.tokenSrc
+		} else if !strings.EqualFold(m.ownerRef.Host, "github.com") {
+			auth = "no token — set GH_ENTERPRISE_TOKEN for private repos"
 		}
 		rows := [][2]string{
 			{kind, p.Owner.Login + "  " + p.OwnerURL()},
@@ -74,6 +77,9 @@ func (m Model) renderConfirm() string {
 		}
 		for _, r := range rows {
 			b.WriteString("  " + dimStyle.Render(padRight(r[0], 13)) + clipStr(r[1], tw-16) + "\n")
+		}
+		if m.apiOverride {
+			wrapLines(&b, "API base "+m.apiBase+" from GITOPS_GITHUB_API — the token is sent there and its responses are trusted.", tw-6, warnStyle.Render("  ⚠ "))
 		}
 		hasNested, hasOther := false, false
 		for _, w := range p.Warnings {
@@ -113,7 +119,7 @@ func (m Model) renderConfirm() string {
 	case "reset":
 		text = fmt.Sprintf("reset will permanently discard all uncommitted changes and untracked files in %s, then force-checkout the default branch and pull.", format.Plural(len(names), "repository"))
 	case "push":
-		text = fmt.Sprintf("push will run git add -A, commit %q and push the current branch in %s.", strings.TrimSpace(m.input.Value()), format.Plural(len(names), "repository"))
+		text = fmt.Sprintf("push will stage all changes (except %s), commit %q and push the current branch in %s.", ops.ExcludedJunk(), strings.TrimSpace(m.input.Value()), format.Plural(len(names), "repository"))
 	default:
 		text = fmt.Sprintf("Run %s in %s.", op.name, format.Plural(len(names), "repository"))
 	}

@@ -155,9 +155,21 @@ func pathExists(p string) bool {
 	return err == nil
 }
 
-// validRepoDirName rejects names that could escape the target directory.
+// validRepoDirName rejects names that could escape the target directory or
+// are unsafe as a file name — path separators and dot-dots, but also
+// control characters and characters like ":" that create NTFS alternate
+// data streams on Windows. A real GitHub repository name is only
+// [A-Za-z0-9._-], so nothing legitimate is rejected.
 func validRepoDirName(name string) bool {
-	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\`)
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\:*?"<>|`) {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // BuildPlan decides what to do with each repository and looks for existing

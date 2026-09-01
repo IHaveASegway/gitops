@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -46,7 +46,21 @@ jobs:
           git diff --exit-code go.mod go.sum
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v2.13.2
+
+  govulncheck:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: govulncheck
+        # Pinned for reproducibility; the vulnerability database is fetched
+        # fresh at run time regardless of the tool version. Bump via Dependabot.
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
   cross-build:
     name: Cross-compile

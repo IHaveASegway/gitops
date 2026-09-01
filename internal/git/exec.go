@@ -50,11 +50,30 @@ func RunEnv(ctx context.Context, dir string, extraEnv []string, args ...string) 
 }
 
 // CheckBranchName reports an error when name is not a legal branch name.
+// Use it when a branch is being created; for checking out an arbitrary
+// existing ref use CheckRefArg, which is laxer.
 func CheckBranchName(name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if _, err := Run(ctx, "", "check-ref-format", "--branch", name); err != nil {
 		return fmt.Errorf("%q is not a valid branch name", name)
+	}
+	return nil
+}
+
+// CheckRefArg validates a ref passed to a command like checkout. It only
+// guards against an empty value and against option injection (a leading
+// dash), so any real ref — a tag, remote-tracking branch, SHA, HEAD~1 or
+// the @{-1} "previous branch" alias — is accepted; git reports a
+// non-existent ref itself. It is the option-injection defense that the "--"
+// terminator alone does not provide (git parses a leading-dash ref as a
+// flag before reaching the "--").
+func CheckRefArg(name string) error {
+	if name == "" {
+		return errors.New("a branch or ref is required")
+	}
+	if strings.HasPrefix(name, "-") {
+		return fmt.Errorf("%q is not a valid branch or ref (must not start with '-')", name)
 	}
 	return nil
 }

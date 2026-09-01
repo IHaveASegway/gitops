@@ -18,6 +18,9 @@ func clone(t *testing.T) string {
 	up := testutil.NewBare(t, root, "up")
 	p := filepath.Join(root, "clone")
 	testutil.Git(t, root, "clone", "-q", up, p)
+	// Deterministic line endings on Windows runners (core.autocrlf=true
+	// globally there would rewrite "\n" to "\r\n" on checkout).
+	testutil.Git(t, p, "config", "core.autocrlf", "false")
 	return p
 }
 
@@ -76,5 +79,71 @@ func TestBranchCheckoutPush(t *testing.T) {
 	}
 	if out := testutil.Git(t, repo, "log", "--oneline", "origin/main", "-1"); !strings.Contains(out, "add new") {
 		t.Errorf("upstream did not receive the commit: %q", out)
+	}
+}
+
+func TestPushNeverCommitsJunkFiles(t *testing.T) {
+	ctx := context.Background()
+
+	// Each of these dirty states consists only of junk and must report
+	// "nothing to commit", never an error. They exercise the parsing traps:
+	// an untracked file at the root (the first porcelain line, whose leading
+	// status column git.Run would trim), a fully-untracked directory (which
+	// git status collapses to "dir/"), and a tracked-but-modified junk file.
+	junkOnly := map[string]func(repo string){
+		"untracked root": func(repo string) {
+			mustWrite(t, filepath.Join(repo, ".DS_Store"), "x")
+		},
+		"untracked directory": func(repo string) {
+			if err := os.MkdirAll(filepath.Join(repo, "newdir"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(repo, "newdir", ".DS_Store"), "x")
+		},
+		"tracked and modified": func(repo string) {
+			mustWrite(t, filepath.Join(repo, ".DS_Store"), "v1")
+			testutil.Git(t, repo, "add", "-f", ".DS_Store")
+			testutil.Git(t, repo, "commit", "-qm", "add junk")
+			mustWrite(t, filepath.Join(repo, ".DS_Store"), "v2")
+		},
+	}
+	for label, setup := range junkOnly {
+		t.Run(label, func(t *testing.T) {
+			repo := clone(t)
+			setup(repo)
+			if r := Push("junk only")(ctx, repo); !r.Success || !strings.HasPrefix(r.Output, "nothing to commit (only ") {
+				t.Errorf("%s: push = %+v", label, r)
+			}
+		})
+	}
+
+	// Junk mixed with a real change, at the root and nested: the real file
+	// is pushed, the junk is left untracked.
+	repo := clone(t)
+	if err := os.MkdirAll(filepath.Join(repo, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(repo, ".DS_Store"), "x")
+	mustWrite(t, filepath.Join(repo, "sub", ".DS_Store"), "x")
+	mustWrite(t, filepath.Join(repo, "sub", "real.txt"), "content")
+	if r := Push("real change")(ctx, repo); !r.Success || r.Output != "pushed to main" {
+		t.Errorf("mixed push = %+v", r)
+	}
+	tracked := testutil.Git(t, repo, "ls-files")
+	if strings.Contains(tracked, ".DS_Store") {
+		t.Errorf(".DS_Store was committed:\n%s", tracked)
+	}
+	if !strings.Contains(tracked, "sub/real.txt") {
+		t.Errorf("real file missing from the commit:\n%s", tracked)
+	}
+	if status := testutil.Git(t, repo, "status", "--porcelain"); strings.Count(status, ".DS_Store") != 2 {
+		t.Errorf("junk files should remain untracked:\n%s", status)
+	}
+}
+
+func mustWrite(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

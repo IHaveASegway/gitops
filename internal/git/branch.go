@@ -6,11 +6,13 @@ import (
 )
 
 // parseDefaultBranchRef turns "refs/remotes/origin/main" into "main",
-// keeping slashes inside branch names ("release/1.0") intact.
+// keeping slashes inside branch names ("release/1.0") intact. Names that
+// look like command-line options are rejected: origin/HEAD is repository
+// data, and its value must never be able to add flags to a git invocation.
 func parseDefaultBranchRef(ref string) string {
 	ref = strings.TrimSpace(ref)
 	for _, prefix := range []string{"refs/remotes/origin/", "origin/"} {
-		if b, ok := strings.CutPrefix(ref, prefix); ok && b != "" {
+		if b, ok := strings.CutPrefix(ref, prefix); ok && b != "" && !strings.HasPrefix(b, "-") {
 			return b
 		}
 	}

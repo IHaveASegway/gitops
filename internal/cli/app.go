@@ -12,9 +12,11 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v2"
 
 	"github.com/IHaveASegway/gitops/internal/buildinfo"
+	"github.com/IHaveASegway/gitops/internal/format"
 	"github.com/IHaveASegway/gitops/internal/git"
 	"github.com/IHaveASegway/gitops/internal/ops"
 	"github.com/IHaveASegway/gitops/internal/report"
@@ -31,6 +33,7 @@ func Run(args []string) error {
 }
 
 func newApp() *cli.App {
+	branchNameOK := func(c *cli.Context) error { return git.CheckBranchName(c.String("name")) }
 	return &cli.App{
 		Name:    "gitops",
 		Usage:   "Mass git operations across multiple repositories",
@@ -38,23 +41,51 @@ func newApp() *cli.App {
 		Flags:   append(sharedFlags(), dirFlag()),
 		Action:  runTUI,
 		Commands: []*cli.Command{
-			repoCommand("pull", "Checkout default branch and pull latest", nil,
-				func(*cli.Context) runner.Func { return ops.Pull }),
-			repoCommand("sync", "Stash changes, checkout default branch, pull, pop stash", nil,
-				func(*cli.Context) runner.Func { return ops.Sync }),
-			repoCommand("status", "Show branch, ahead/behind and working tree status for all repos", nil,
-				func(*cli.Context) runner.Func { return ops.Status }),
-			repoCommand("branch", "Create a new branch from the default branch",
-				[]cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Name of the new branch", Required: true}},
-				func(c *cli.Context) runner.Func { return ops.CreateBranch(c.String("name")) }),
-			repoCommand("checkout", "Checkout an existing branch",
-				[]cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Branch name to checkout", Required: true}},
-				func(c *cli.Context) runner.Func { return ops.Checkout(c.String("name")) }),
-			repoCommand("push", "Stage all changes, commit, and push the current branch",
-				[]cli.Flag{&cli.StringFlag{Name: "message", Aliases: []string{"m"}, Usage: "Commit message", Required: true}},
-				func(c *cli.Context) runner.Func { return ops.Push(c.String("message")) }),
-			repoCommand("reset", "Discard ALL local changes, force checkout default branch, pull", nil,
-				func(*cli.Context) runner.Func { return ops.Reset }),
+			repoCommand(opCommand{
+				name: "pull", usage: "Checkout default branch and pull latest",
+				build: func(*cli.Context) runner.Func { return ops.Pull },
+			}),
+			repoCommand(opCommand{
+				name: "sync", usage: "Stash changes, checkout default branch, pull, pop stash",
+				build: func(*cli.Context) runner.Func { return ops.Sync },
+			}),
+			repoCommand(opCommand{
+				name: "status", usage: "Show branch, ahead/behind and working tree status for all repos",
+				build: func(*cli.Context) runner.Func { return ops.Status },
+			}),
+			repoCommand(opCommand{
+				name: "branch", usage: "Create a new branch from the default branch",
+				flags: []cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Name of the new branch", Required: true}},
+				check: branchNameOK,
+				build: func(c *cli.Context) runner.Func { return ops.CreateBranch(c.String("name")) },
+			}),
+			repoCommand(opCommand{
+				name: "checkout", usage: "Checkout an existing branch",
+				flags: []cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Branch name to checkout", Required: true}},
+				check: func(c *cli.Context) error { return git.CheckRefArg(c.String("name")) },
+				build: func(c *cli.Context) runner.Func { return ops.Checkout(c.String("name")) },
+			}),
+			repoCommand(opCommand{
+				name: "push", usage: "Stage all changes, commit, and push the current branch",
+				flags: []cli.Flag{
+					&cli.StringFlag{Name: "message", Aliases: []string{"m"}, Usage: "Commit message", Required: true},
+					yesFlag(),
+				},
+				build: func(c *cli.Context) runner.Func { return ops.Push(c.String("message")) },
+				warn: func(c *cli.Context, n int) string {
+					return fmt.Sprintf("push will stage all changes (except %s), commit %q and push the current branch in %s.",
+						ops.ExcludedJunk(), strings.TrimSpace(c.String("message")), format.Plural(n, "repository"))
+				},
+			}),
+			repoCommand(opCommand{
+				name: "reset", usage: "Discard ALL local changes, force checkout default branch, pull",
+				flags: []cli.Flag{yesFlag()},
+				build: func(*cli.Context) runner.Func { return ops.Reset },
+				warn: func(_ *cli.Context, n int) string {
+					return fmt.Sprintf("reset will permanently discard all uncommitted changes and untracked files in %s, then force-checkout the default branch and pull.",
+						format.Plural(n, "repository"))
+				},
+			}),
 			initCommand(),
 		},
 	}
@@ -71,13 +102,31 @@ func dirFlag() cli.Flag {
 	return &cli.StringFlag{Name: "dir", Aliases: []string{"d"}, Usage: "Base directory containing repos (default: current directory)"}
 }
 
+func yesFlag() cli.Flag {
+	return &cli.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Do not ask for confirmation"}
+}
+
+// opCommand describes one mass-git subcommand.
+type opCommand struct {
+	name, usage string
+	flags       []cli.Flag                         // command-specific flags
+	build       func(*cli.Context) runner.Func     // the operation to run per repo
+	check       func(*cli.Context) error           // optional flag validation before anything runs
+	warn        func(c *cli.Context, n int) string // non-nil marks the command destructive: it must be confirmed
+}
+
 // repoCommand builds a subcommand that runs one git operation across repos.
-func repoCommand(name, usage string, extra []cli.Flag, build func(*cli.Context) runner.Func) *cli.Command {
+func repoCommand(op opCommand) *cli.Command {
 	return &cli.Command{
-		Name:  name,
-		Usage: usage,
-		Flags: append(append(sharedFlags(), dirFlag()), extra...),
+		Name:  op.name,
+		Usage: op.usage,
+		Flags: append(append(sharedFlags(), dirFlag()), op.flags...),
 		Action: func(c *cli.Context) error {
+			if op.check != nil {
+				if err := op.check(c); err != nil {
+					return err
+				}
+			}
 			baseDir, err := resolveBaseDir(c.String("dir"))
 			if err != nil {
 				return err
@@ -86,13 +135,42 @@ func repoCommand(name, usage string, extra []cli.Flag, build func(*cli.Context) 
 			if err != nil {
 				return err
 			}
+			if op.warn != nil {
+				names := make([]string, len(repos))
+				for i, r := range repos {
+					names[i] = filepath.Base(r)
+				}
+				ok, err := confirmDestructive(op.name, op.warn(c, len(repos)), names, c.Bool("yes"))
+				if err != nil || !ok {
+					return err
+				}
+			}
 			ctx, stop := signalContext()
 			defer stop()
-			results := runner.Run(ctx, repos, build(c), c.Int("jobs"), nil)
-			report.PrintResults(os.Stdout, strings.ToUpper(name[:1])+name[1:]+" results", results)
+			results := runner.Run(ctx, repos, op.build(c), c.Int("jobs"), nil)
+			report.PrintResults(os.Stdout, strings.ToUpper(op.name[:1])+op.name[1:]+" results", results)
 			return failIfAny(results)
 		},
 	}
+}
+
+// confirmDestructive gates a destructive command like the TUI does: with
+// --yes it proceeds, in a terminal it asks (defaulting to No), and without
+// either it refuses with exit code 2 so scripts must opt in explicitly.
+func confirmDestructive(name, warning string, repoNames []string, yes bool) (bool, error) {
+	if yes {
+		return true, nil
+	}
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		return false, cli.Exit(fmt.Sprintf("refusing to %s without confirmation; re-run with --yes", name), exitRefused)
+	}
+	fmt.Println("  " + report.Paint("33", "⚠ ") + warning)
+	fmt.Println("    " + format.JoinNames(repoNames, 15))
+	if !confirm("Continue?", false) {
+		fmt.Println("  Aborted.")
+		return false, nil
+	}
+	return true, nil
 }
 
 // signalContext is canceled on Ctrl-C / SIGTERM so in-flight git processes
@@ -167,7 +245,15 @@ func resolveRepos(baseDir, repoFlag string) ([]string, error) {
 	}
 	repos := make([]string, 0, len(names))
 	for _, name := range names {
-		repoPath := filepath.Join(baseDir, name)
+		// Repo names address direct children of baseDir; anything with an
+		// interior path separator or a dot-dot could reach (and reset or
+		// push) an unrelated repository elsewhere on disk. A single trailing
+		// slash is tolerated — shell tab-completion adds one to "myrepo/".
+		clean := strings.TrimRight(name, `/\`)
+		if clean == "" || clean == "." || clean == ".." || strings.ContainsAny(clean, `/\`) {
+			return nil, fmt.Errorf("invalid repo name %q: use bare directory names inside %s", name, baseDir)
+		}
+		repoPath := filepath.Join(baseDir, clean)
 		if !git.IsRepo(repoPath) {
 			return nil, fmt.Errorf("%s is not a git repository", repoPath)
 		}

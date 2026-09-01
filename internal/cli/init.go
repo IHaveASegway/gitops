@@ -36,7 +36,10 @@ org is never duplicated by accident.
 Accepted forms: https://github.com/acme, github.com/acme, acme,
 git@github.com:acme/repo.git, https://ghe.example.com/acme
 
-Authentication: GH_TOKEN, GITHUB_TOKEN, or the gh CLI's stored login.`,
+Authentication: GH_TOKEN, GITHUB_TOKEN, or the gh CLI's stored login.
+Tokens are scoped to their host: GH_TOKEN/GITHUB_TOKEN are sent to
+github.com only; GitHub Enterprise hosts use GH_ENTERPRISE_TOKEN,
+GITHUB_ENTERPRISE_TOKEN, or gh auth login --hostname <host>.`,
 		Flags: []cli.Flag{
 			dirFlag(),
 			&cli.StringFlag{Name: "repos", Aliases: []string{"r"}, Usage: "Comma-separated list of repo names to clone (default: all)"},
@@ -83,7 +86,19 @@ func runInit(c *cli.Context) error {
 		auth = "token from " + source
 	}
 	fmt.Printf("  Looking up %s on %s (%s)…\n", ref.Owner, ref.Host, auth)
+	if token == "" && !strings.EqualFold(ref.Host, "github.com") &&
+		(os.Getenv("GH_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "") {
+		// GH_TOKEN/GITHUB_TOKEN are github.com-only by design; point GHE
+		// users at the host-scoped alternatives instead of failing silently.
+		fmt.Printf("    note: GH_TOKEN/GITHUB_TOKEN are not used off github.com; set GH_ENTERPRISE_TOKEN or run `gh auth login --hostname %s`\n", ref.Host)
+	}
 	client := github.NewClient(ref.Host, token)
+	if client.Overridden() {
+		// An overridden API base receives the token and its repository URLs
+		// are trusted; make that unmistakable even if it equals the default.
+		fmt.Printf("  %s Using API base %s from GITOPS_GITHUB_API (token is sent there; responses are trusted)\n",
+			report.Paint("33", "⚠"), client.APIBase)
+	}
 	owner, err := client.LookupOwner(ctx, ref.Owner)
 	if err != nil {
 		return err
