@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/IHaveASegway/gitops/actions/workflows/ci.yml"><img src="https://github.com/IHaveASegway/gitops/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/IHaveASegway/gitops/releases"><img src="https://img.shields.io/github/v/release/IHaveASegway/gitops?sort=semver&color=00c2a8" alt="Release"></a>
-  <a href="https://goreportcard.com/report/github.com/IHaveASegway/gitops"><img src="https://goreportcard.com/badge/github.com/IHaveASegway/gitops" alt="Go Report Card"></a>
+  <a href="https://github.com/IHaveASegway/gitops/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/IHaveASegway/gitops?color=00ADD8&logo=go" alt="Go version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 
