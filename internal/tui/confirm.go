@@ -113,7 +113,7 @@ func (m Model) renderConfirm() string {
 	case "reset":
 		text = fmt.Sprintf("reset will permanently discard all uncommitted changes and untracked files in %s, then force-checkout the default branch and pull.", format.Plural(len(names), "repository"))
 	case "push":
-		text = fmt.Sprintf("push will run git add -A, commit %q and push the current branch in %s.", strings.TrimSpace(m.input.Value()), format.Plural(len(names), "repository"))
+		text = fmt.Sprintf("push will stage all changes (except .DS_Store), commit %q and push the current branch in %s.", strings.TrimSpace(m.input.Value()), format.Plural(len(names), "repository"))
 	default:
 		text = fmt.Sprintf("Run %s in %s.", op.name, format.Plural(len(names), "repository"))
 	}

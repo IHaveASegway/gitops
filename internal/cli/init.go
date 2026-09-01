@@ -36,7 +36,10 @@ org is never duplicated by accident.
 Accepted forms: https://github.com/acme, github.com/acme, acme,
 git@github.com:acme/repo.git, https://ghe.example.com/acme
 
-Authentication: GH_TOKEN, GITHUB_TOKEN, or the gh CLI's stored login.`,
+Authentication: GH_TOKEN, GITHUB_TOKEN, or the gh CLI's stored login.
+Tokens are scoped to their host: GH_TOKEN/GITHUB_TOKEN are sent to
+github.com only; GitHub Enterprise hosts use GH_ENTERPRISE_TOKEN,
+GITHUB_ENTERPRISE_TOKEN, or gh auth login --hostname <host>.`,
 		Flags: []cli.Flag{
 			dirFlag(),
 			&cli.StringFlag{Name: "repos", Aliases: []string{"r"}, Usage: "Comma-separated list of repo names to clone (default: all)"},
@@ -84,6 +87,10 @@ func runInit(c *cli.Context) error {
 	}
 	fmt.Printf("  Looking up %s on %s (%s)…\n", ref.Owner, ref.Host, auth)
 	client := github.NewClient(ref.Host, token)
+	if client.APIBase != github.DefaultAPIBase(ref.Host) {
+		// An overridden API base receives the token; make that visible.
+		fmt.Printf("  Using API base %s (GITOPS_GITHUB_API)\n", client.APIBase)
+	}
 	owner, err := client.LookupOwner(ctx, ref.Owner)
 	if err != nil {
 		return err

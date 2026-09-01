@@ -17,6 +17,8 @@ func TestParseDefaultBranchRef(t *testing.T) {
 		"origin/master":                   "master",
 		"refs/heads/main":                 "",
 		"":                                "",
+		"refs/remotes/origin/--force":     "", // option-shaped names are repository data
+		"origin/-f":                       "",
 	}
 	for in, want := range cases {
 		if got := parseDefaultBranchRef(in); got != want {

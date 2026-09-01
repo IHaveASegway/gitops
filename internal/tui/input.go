@@ -86,7 +86,7 @@ func (m Model) renderInput() string {
 			"Private repos need a token: GH_TOKEN, GITHUB_TOKEN or gh auth login.",
 		}
 	case "push":
-		hints = []string{"Runs git add -A, git commit -m <message> and git push on each selected repo's current branch."}
+		hints = []string{"Stages all changes except .DS_Store, commits with <message> and pushes each selected repo's current branch."}
 	case "branch":
 		hints = []string{"Each repo checks out its default branch, pulls, then creates the branch from there."}
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/IHaveASegway/gitops/internal/git"
 	"github.com/IHaveASegway/gitops/internal/runner"
@@ -17,7 +18,7 @@ func Pull(ctx context.Context, repo string) runner.Result {
 	name := filepath.Base(repo)
 	branch := git.DefaultBranch(ctx, repo)
 
-	if _, err := git.Run(ctx, repo, "checkout", branch); err != nil {
+	if _, err := git.Run(ctx, repo, "checkout", branch, "--"); err != nil {
 		return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
 	}
 	out, err := git.Run(ctx, repo, "pull", "--ff-only")
@@ -50,7 +51,7 @@ func Sync(ctx context.Context, repo string) runner.Result {
 		}
 	}
 
-	if _, err := git.Run(ctx, repo, "checkout", branch); err != nil {
+	if _, err := git.Run(ctx, repo, "checkout", branch, "--"); err != nil {
 		restore()
 		return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
 	}
@@ -82,7 +83,7 @@ func Reset(ctx context.Context, repo string) runner.Result {
 	_, _ = git.Run(ctx, repo, "checkout", ".")
 	_, _ = git.Run(ctx, repo, "clean", "-fd")
 
-	if _, err := git.Run(ctx, repo, "checkout", "-f", branch); err != nil {
+	if _, err := git.Run(ctx, repo, "checkout", "-f", branch, "--"); err != nil {
 		return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
 	}
 	out, err := git.Run(ctx, repo, "pull", "--ff-only")
@@ -102,7 +103,7 @@ func CreateBranch(branchName string) runner.Func {
 		name := filepath.Base(repo)
 		base := git.DefaultBranch(ctx, repo)
 
-		if _, err := git.Run(ctx, repo, "checkout", base); err != nil {
+		if _, err := git.Run(ctx, repo, "checkout", base, "--"); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", base, err)}
 		}
 		if _, err := git.Run(ctx, repo, "pull", "--ff-only"); err != nil {
@@ -115,8 +116,24 @@ func CreateBranch(branchName string) runner.Func {
 	}
 }
 
+// junkNames are OS metadata files that must never be mass-committed:
+// Finder drops .DS_Store files into any directory it touches, and
+// `git add -A` would push them to every repository at once.
+var junkNames = []string{".DS_Store"}
+
+// addAllArgs stages everything except junk files.
+func addAllArgs() []string {
+	args := []string{"add", "-A", "--", "."}
+	for _, n := range junkNames {
+		// Default pathspec wildcards match "/" too, so */NAME covers any depth.
+		args = append(args, ":(exclude)"+n, ":(exclude)*/"+n)
+	}
+	return args
+}
+
 // Push returns an operation that stages everything, commits with message
-// and pushes the current branch.
+// and pushes the current branch. OS junk files such as .DS_Store are never
+// staged; a repository whose only changes are junk reports nothing to do.
 func Push(message string) runner.Func {
 	return func(ctx context.Context, repo string) runner.Result {
 		name := filepath.Base(repo)
@@ -125,8 +142,15 @@ func Push(message string) runner.Func {
 		if status == "" {
 			return runner.Result{Repo: name, Success: true, Output: "nothing to commit"}
 		}
-		if _, err := git.Run(ctx, repo, "add", "-A"); err != nil {
+		if _, err := git.Run(ctx, repo, addAllArgs()...); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("add: %v", err)}
+		}
+		// The working tree was dirty but nothing landed in the index: every
+		// change was an excluded junk file. Ask the index directly rather
+		// than parse porcelain, which collapses untracked dirs to "dir/" and
+		// loses the first line's leading status column.
+		if _, err := git.Run(ctx, repo, "diff", "--cached", "--quiet"); err == nil {
+			return runner.Result{Repo: name, Success: true, Output: "nothing to commit (only " + strings.Join(junkNames, ", ") + ")"}
 		}
 		if _, err := git.Run(ctx, repo, "commit", "-m", message); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("commit: %v", err)}
@@ -135,7 +159,7 @@ func Push(message string) runner.Func {
 		if err != nil || branch == "" {
 			return runner.Result{Repo: name, Error: "committed, but HEAD is detached — push manually"}
 		}
-		if _, err := git.Run(ctx, repo, "push", "-u", "origin", branch); err != nil {
+		if _, err := git.Run(ctx, repo, "push", "-u", "origin", "--", branch); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("push: %v", err)}
 		}
 		return runner.Result{Repo: name, Success: true, Output: "pushed to " + branch}
@@ -146,7 +170,7 @@ func Push(message string) runner.Func {
 func Checkout(branchName string) runner.Func {
 	return func(ctx context.Context, repo string) runner.Result {
 		name := filepath.Base(repo)
-		if _, err := git.Run(ctx, repo, "checkout", branchName); err != nil {
+		if _, err := git.Run(ctx, repo, "checkout", branchName, "--"); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("checkout: %v", err)}
 		}
 		return runner.Result{Repo: name, Success: true, Output: "on " + branchName}

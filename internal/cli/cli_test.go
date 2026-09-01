@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,18 @@ func TestResolveRepos(t *testing.T) {
 	if _, err := resolveRepos(base, "not-a-repo"); err == nil {
 		t.Error("expected an error for a non-repo")
 	}
+	// Names must stay inside the base directory: reset/push must not be
+	// steerable at repositories elsewhere on disk.
+	testutil.NewRepo(t, filepath.Join(base, "nested", "inner"), "", false)
+	for _, name := range []string{"../a", "..", ".", "nested/inner", `nested\inner`, "/abs", "../", "a/../b"} {
+		if _, err := resolveRepos(base, name); err == nil || !strings.Contains(err.Error(), "invalid repo name") {
+			t.Errorf("%q: expected an invalid-name error, got %v", name, err)
+		}
+	}
+	// A single trailing slash (shell tab-completion) is tolerated.
+	if repos, err := resolveRepos(base, "a/"); err != nil || len(repos) != 1 || filepath.Base(repos[0]) != "a" {
+		t.Errorf("trailing slash: %v, %v", repos, err)
+	}
 	if _, err := resolveRepos(t.TempDir(), ""); err == nil || !strings.Contains(err.Error(), "gitops init") {
 		t.Errorf("empty dir error = %v", err)
 	}
@@ -57,6 +70,23 @@ func TestResolveRepos(t *testing.T) {
 	}
 	if got, err := resolveBaseDir(base); err != nil || got != base {
 		t.Errorf("resolveBaseDir = %q, %v", got, err)
+	}
+}
+
+func TestConfirmDestructive(t *testing.T) {
+	names := []string{"a", "b"}
+	if ok, err := confirmDestructive("reset", "warning", names, true); !ok || err != nil {
+		t.Errorf("--yes: ok=%v err=%v", ok, err)
+	}
+	// The test process has no TTY on stdin, so without --yes the command
+	// must refuse with the "refused" exit code instead of prompting.
+	ok, err := confirmDestructive("reset", "warning", names, false)
+	if ok || err == nil || !strings.Contains(err.Error(), "refusing to reset") {
+		t.Errorf("non-interactive: ok=%v err=%v", ok, err)
+	}
+	var coder interface{ ExitCode() int }
+	if !errors.As(err, &coder) || coder.ExitCode() != exitRefused {
+		t.Errorf("expected exit code %d, got %v", exitRefused, err)
 	}
 }
 
