@@ -86,10 +86,18 @@ func runInit(c *cli.Context) error {
 		auth = "token from " + source
 	}
 	fmt.Printf("  Looking up %s on %s (%s)…\n", ref.Owner, ref.Host, auth)
+	if token == "" && !strings.EqualFold(ref.Host, "github.com") &&
+		(os.Getenv("GH_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "") {
+		// GH_TOKEN/GITHUB_TOKEN are github.com-only by design; point GHE
+		// users at the host-scoped alternatives instead of failing silently.
+		fmt.Printf("    note: GH_TOKEN/GITHUB_TOKEN are not used off github.com; set GH_ENTERPRISE_TOKEN or run `gh auth login --hostname %s`\n", ref.Host)
+	}
 	client := github.NewClient(ref.Host, token)
-	if client.APIBase != github.DefaultAPIBase(ref.Host) {
-		// An overridden API base receives the token; make that visible.
-		fmt.Printf("  Using API base %s (GITOPS_GITHUB_API)\n", client.APIBase)
+	if client.Overridden() {
+		// An overridden API base receives the token and its repository URLs
+		// are trusted; make that unmistakable even if it equals the default.
+		fmt.Printf("  %s Using API base %s from GITOPS_GITHUB_API (token is sent there; responses are trusted)\n",
+			report.Paint("33", "⚠"), client.APIBase)
 	}
 	owner, err := client.LookupOwner(ctx, ref.Owner)
 	if err != nil {

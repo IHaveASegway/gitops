@@ -49,6 +49,12 @@ type Repo struct {
 // non-default port cannot survive and steer the clone elsewhere.
 func sanitizeRepo(host, owner string, r Repo) Repo {
 	r.FullName = owner + "/" + r.Name
+	// default_branch is display-only (a label after "cloned"); a hostile
+	// value with control characters could rewrite or forge terminal output,
+	// so drop it if it is not printable.
+	if hasControl(r.DefaultBranch) {
+		r.DefaultBranch = ""
+	}
 	if isRepoURL(r.CloneURL, "https", host, owner, r.Name) {
 		r.CloneURL = "https://" + host + "/" + r.FullName + ".git"
 	} else {
@@ -60,6 +66,17 @@ func sanitizeRepo(host, owner string, r Repo) Repo {
 		r.SSHURL = ""
 	}
 	return r
+}
+
+// hasControl reports whether s contains an ASCII control character (which
+// could carry ANSI escape sequences into terminal output).
+func hasControl(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // isRepoURL reports whether raw is an https or ssh URL that resolves to
@@ -159,6 +176,11 @@ func allowedAPIBase(raw string) bool {
 	return false
 }
 
+// Overridden reports whether the API base came from GITOPS_GITHUB_API. When
+// it is set, the token is sent to that endpoint and its repository URLs are
+// taken at face value, so callers should make the override visible.
+func (c *Client) Overridden() bool { return c.trusted }
+
 // APIError is a non-2xx response from the API.
 type APIError struct {
 	Status      int
@@ -232,7 +254,9 @@ func (c *Client) get(ctx context.Context, target string, out any) (string, error
 }
 
 // sameAPIOrigin reports whether an absolute URL shares the API base's
-// scheme and host (port included).
+// scheme, host and port. Default ports are normalized, so a proxy that
+// spells an equivalent authority (an explicit :443 on https) is not falsely
+// rejected mid-listing.
 func (c *Client) sameAPIOrigin(target string) bool {
 	u, err := url.Parse(target)
 	if err != nil {
@@ -242,7 +266,23 @@ func (c *Client) sameAPIOrigin(target string) bool {
 	if err != nil {
 		return false
 	}
-	return u.Scheme == base.Scheme && strings.EqualFold(u.Host, base.Host)
+	return u.Scheme == base.Scheme &&
+		strings.EqualFold(u.Hostname(), base.Hostname()) &&
+		normalizedPort(u) == normalizedPort(base)
+}
+
+// normalizedPort returns u's port, filling in the scheme's default.
+func normalizedPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch u.Scheme {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
 }
 
 // parseLinkNext extracts the rel="next" URL from a Link header.
@@ -274,6 +314,14 @@ func (c *Client) LookupOwner(ctx context.Context, login string) (Owner, error) {
 			return o, fmt.Errorf("no organization or user named %q on %s", login, c.Host)
 		}
 		return o, err
+	}
+	// The canonical login from the API replaces the user's input and is then
+	// used verbatim as a directory name (the clone target) and as the trust
+	// anchor for repository URLs. A real GitHub login always matches loginRE;
+	// anything else (a spoofed or MITM'd response with "../.." or a slash)
+	// must not become a path or be used to rebuild clone URLs.
+	if !loginRE.MatchString(o.Login) {
+		return o, fmt.Errorf("%s returned an invalid account name %q", c.Host, o.Login)
 	}
 	return o, nil
 }

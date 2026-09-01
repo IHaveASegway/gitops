@@ -37,7 +37,12 @@ func Sync(ctx context.Context, repo string) runner.Result {
 	name := filepath.Base(repo)
 	branch := git.DefaultBranch(ctx, repo)
 
-	status, _ := git.Run(ctx, repo, "status", "--porcelain")
+	status, err := git.Run(ctx, repo, "status", "--porcelain")
+	if err != nil {
+		// Don't silently skip the auto-stash on a failed status read: local
+		// changes could be lost to the checkout below.
+		return runner.Result{Repo: name, Error: fmt.Sprintf("status: %v", err)}
+	}
 	stashed := false
 	if status != "" {
 		if _, err := git.Run(ctx, repo, "stash", "push", "--include-untracked", "-m", "gitops-sync-auto-stash"); err != nil {
@@ -121,15 +126,21 @@ func CreateBranch(branchName string) runner.Func {
 // `git add -A` would push them to every repository at once.
 var junkNames = []string{".DS_Store"}
 
-// addAllArgs stages everything except junk files.
-func addAllArgs() []string {
+// addArgs stages everything except junkNames. Built once from junkNames so
+// the exclusion and its user-facing description (ExcludedJunk) never drift.
+var addArgs = func() []string {
 	args := []string{"add", "-A", "--", "."}
 	for _, n := range junkNames {
 		// Default pathspec wildcards match "/" too, so */NAME covers any depth.
 		args = append(args, ":(exclude)"+n, ":(exclude)*/"+n)
 	}
 	return args
-}
+}()
+
+// ExcludedJunk lists, for display in confirmation prompts, the OS junk file
+// names push never stages. It is derived from junkNames so a prompt can
+// never claim a different exclusion than the one push actually applies.
+func ExcludedJunk() string { return strings.Join(junkNames, ", ") }
 
 // Push returns an operation that stages everything, commits with message
 // and pushes the current branch. OS junk files such as .DS_Store are never
@@ -138,11 +149,16 @@ func Push(message string) runner.Func {
 	return func(ctx context.Context, repo string) runner.Result {
 		name := filepath.Base(repo)
 
-		status, _ := git.Run(ctx, repo, "status", "--porcelain")
+		status, err := git.Run(ctx, repo, "status", "--porcelain")
+		if err != nil {
+			// A failed status read must not be mistaken for a clean tree, or
+			// real changes would be silently left unpushed.
+			return runner.Result{Repo: name, Error: fmt.Sprintf("status: %v", err)}
+		}
 		if status == "" {
 			return runner.Result{Repo: name, Success: true, Output: "nothing to commit"}
 		}
-		if _, err := git.Run(ctx, repo, addAllArgs()...); err != nil {
+		if _, err := git.Run(ctx, repo, addArgs...); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("add: %v", err)}
 		}
 		// The working tree was dirty but nothing landed in the index: every
@@ -150,7 +166,7 @@ func Push(message string) runner.Func {
 		// than parse porcelain, which collapses untracked dirs to "dir/" and
 		// loses the first line's leading status column.
 		if _, err := git.Run(ctx, repo, "diff", "--cached", "--quiet"); err == nil {
-			return runner.Result{Repo: name, Success: true, Output: "nothing to commit (only " + strings.Join(junkNames, ", ") + ")"}
+			return runner.Result{Repo: name, Success: true, Output: "nothing to commit (only " + ExcludedJunk() + ")"}
 		}
 		if _, err := git.Run(ctx, repo, "commit", "-m", message); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("commit: %v", err)}

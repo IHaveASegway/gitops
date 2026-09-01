@@ -27,6 +27,20 @@ func TestParseDefaultBranchRef(t *testing.T) {
 	}
 }
 
+func TestCheckRefArg(t *testing.T) {
+	// Accepts any real ref spelling; rejects only empty and option-shaped.
+	for _, ok := range []string{"main", "release/1.0", "origin/main", "HEAD~1", "@{-1}", "v1.2.3", "deadbeef"} {
+		if err := CheckRefArg(ok); err != nil {
+			t.Errorf("CheckRefArg(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "-f", "--mirror", "-"} {
+		if err := CheckRefArg(bad); err == nil {
+			t.Errorf("CheckRefArg(%q) = nil, want error", bad)
+		}
+	}
+}
+
 func TestInspectAndDefaultBranch(t *testing.T) {
 	root := t.TempDir()
 	upstream := testutil.NewBare(t, root, "up")

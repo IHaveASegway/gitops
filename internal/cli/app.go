@@ -62,7 +62,7 @@ func newApp() *cli.App {
 			repoCommand(opCommand{
 				name: "checkout", usage: "Checkout an existing branch",
 				flags: []cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Branch name to checkout", Required: true}},
-				check: branchNameOK,
+				check: func(c *cli.Context) error { return git.CheckRefArg(c.String("name")) },
 				build: func(c *cli.Context) runner.Func { return ops.Checkout(c.String("name")) },
 			}),
 			repoCommand(opCommand{
@@ -73,8 +73,8 @@ func newApp() *cli.App {
 				},
 				build: func(c *cli.Context) runner.Func { return ops.Push(c.String("message")) },
 				warn: func(c *cli.Context, n int) string {
-					return fmt.Sprintf("push will stage all changes (except .DS_Store), commit %q and push the current branch in %s.",
-						strings.TrimSpace(c.String("message")), format.Plural(n, "repository"))
+					return fmt.Sprintf("push will stage all changes (except %s), commit %q and push the current branch in %s.",
+						ops.ExcludedJunk(), strings.TrimSpace(c.String("message")), format.Plural(n, "repository"))
 				},
 			}),
 			repoCommand(opCommand{

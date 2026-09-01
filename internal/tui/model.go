@@ -95,12 +95,14 @@ type (
 	}
 	infoDoneMsg   struct{ gen int }
 	initLoadedMsg struct {
-		gen      int
-		owner    github.Owner
-		repos    []github.Repo
-		opts     clone.Options
-		tokenSrc string
-		err      error
+		gen        int
+		owner      github.Owner
+		repos      []github.Repo
+		opts       clone.Options
+		tokenSrc   string
+		apiBase    string
+		overridden bool
+		err        error
 	}
 	execEventMsg    runner.Event
 	execFinishedMsg struct{}
@@ -139,13 +141,15 @@ type Model struct {
 	inputErr string
 
 	// init flow
-	ownerRef  github.OwnerRef
-	initGen   int
-	initOwner github.Owner
-	initRepos []github.Repo
-	initOpts  clone.Options
-	tokenSrc  string
-	plan      *clone.Plan
+	ownerRef    github.OwnerRef
+	initGen     int
+	initOwner   github.Owner
+	initRepos   []github.Repo
+	initOpts    clone.Options
+	tokenSrc    string
+	apiBase     string
+	apiOverride bool
+	plan        *clone.Plan
 
 	// execution
 	execTitle  string

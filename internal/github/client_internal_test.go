@@ -90,6 +90,54 @@ func TestListReposSanitizesUntrustedResponses(t *testing.T) {
 	}
 }
 
+func TestLookupOwnerRejectsUnsafeLogin(t *testing.T) {
+	for _, login := range []string{"../../../../tmp/pwn", "a/b", `a\b`, "..", "", "-x", "a b"} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"login":%q,"type":"Organization"}`, login)
+		}))
+		c := &Client{Host: "github.com", APIBase: srv.URL, HTTP: srv.Client()}
+		_, err := c.LookupOwner(context.Background(), "acme")
+		srv.Close()
+		if err == nil || !strings.Contains(err.Error(), "invalid account name") {
+			t.Errorf("login %q: expected rejection, got %v", login, err)
+		}
+	}
+	// A normal login is accepted and canonicalized as the API spells it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"login":"Acme","type":"Organization"}`)
+	}))
+	defer srv.Close()
+	c := &Client{Host: "github.com", APIBase: srv.URL, HTTP: srv.Client()}
+	o, err := c.LookupOwner(context.Background(), "acme")
+	if err != nil || o.Login != "Acme" {
+		t.Fatalf("owner=%+v err=%v", o, err)
+	}
+}
+
+func TestSameAPIOriginNormalizesPorts(t *testing.T) {
+	c := &Client{APIBase: "https://proxy.example/api"}
+	if !c.sameAPIOrigin("https://proxy.example:443/api/x?page=2") {
+		t.Error("explicit default https port should be treated as same origin")
+	}
+	if c.sameAPIOrigin("https://proxy.example:8443/api/x") {
+		t.Error("a different port must not be same origin")
+	}
+	if c.sameAPIOrigin("http://proxy.example/api/x") {
+		t.Error("a different scheme must not be same origin")
+	}
+}
+
+func TestSanitizeRepoDropsControlChars(t *testing.T) {
+	got := sanitizeRepo("github.com", "acme", Repo{Name: "widgets", DefaultBranch: "main\x1b[2K\r fake"})
+	if got.DefaultBranch != "" {
+		t.Errorf("control chars in default_branch survived: %q", got.DefaultBranch)
+	}
+	ok := sanitizeRepo("github.com", "acme", Repo{Name: "widgets", DefaultBranch: "release/1.0"})
+	if ok.DefaultBranch != "release/1.0" {
+		t.Errorf("clean default_branch was dropped: %q", ok.DefaultBranch)
+	}
+}
+
 func TestSanitizeRepo(t *testing.T) {
 	good := Repo{
 		Name:     "widgets",

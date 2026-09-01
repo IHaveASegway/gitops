@@ -21,10 +21,14 @@ All notable changes to this project are documented here. The format follows
 - `GITOPS_GITHUB_API` must be an `https://` URL (`http://` for localhost
   only); the CLI prints the active base before making requests, and invalid
   values are ignored with a warning.
-- Branch names given to CLI `branch`/`checkout` are validated with
-  `git check-ref-format` (the TUI already did this), refs are terminated
-  with `--` in git invocations, and an option-shaped `origin/HEAD` value is
-  ignored.
+- CLI `branch` validates its name with `git check-ref-format`; `checkout`
+  and other ref arguments reject option-shaped values (a leading `-`) so
+  they cannot inject git flags, and an option-shaped `origin/HEAD` value is
+  ignored. Refs are also passed after `--` where that disambiguates them
+  from pathspecs.
+- The account name the API resolves is re-validated before it is used as a
+  clone directory or to rebuild repository URLs, so a spoofed response
+  cannot direct clones outside the chosen directory.
 - `govulncheck` runs in CI, and release checksums are signed with cosign
   (keyless Sigstore); the release job's GoReleaser and cosign binaries are
   version-pinned for reproducibility.

@@ -170,6 +170,20 @@ func TestPlanReusesCaseInsensitiveDirAndFlagsConflicts(t *testing.T) {
 	}
 }
 
+func TestValidRepoDirName(t *testing.T) {
+	for _, ok := range []string{"widgets", "my-repo", ".github", "a.b_c", "Repo1"} {
+		if !validRepoDirName(ok) {
+			t.Errorf("validRepoDirName(%q) = false, want true", ok)
+		}
+	}
+	bad := []string{"", ".", "..", "a/b", `a\b`, "a:stream", "a*b", "a?b", `a"b`, "a<b", "a>b", "a|b", "a\x1bb", "a\x00b"}
+	for _, b := range bad {
+		if validRepoDirName(b) {
+			t.Errorf("validRepoDirName(%q) = true, want false", b)
+		}
+	}
+}
+
 func TestPlanFilters(t *testing.T) {
 	base := t.TempDir()
 	repos := []github.Repo{
