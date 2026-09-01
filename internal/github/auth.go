@@ -11,10 +11,16 @@ import (
 // FindToken locates a token for host: environment variables first (matching
 // the gh CLI's own precedence), then gh's stored credentials. The returned
 // source is a short label for display, e.g. "$GITHUB_TOKEN" or "gh auth".
+//
+// Tokens are strictly scoped to the host they belong to: GH_TOKEN and
+// GITHUB_TOKEN authenticate github.com only, GH_ENTERPRISE_TOKEN and
+// GITHUB_ENTERPRISE_TOKEN authenticate everything else. A github.com token
+// is never sent to another host — a typo'd or hostile host name must not
+// receive it. gh's stored credentials are already looked up per host.
 func FindToken(host string) (token, source string) {
 	envs := []string{"GH_TOKEN", "GITHUB_TOKEN"}
 	if !strings.EqualFold(host, "github.com") {
-		envs = append([]string{"GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}, envs...)
+		envs = []string{"GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
 	}
 	for _, name := range envs {
 		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
