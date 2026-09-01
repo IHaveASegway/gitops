@@ -36,6 +36,10 @@ func NewRepo(t testing.TB, dir, origin string, commit bool) {
 		t.Fatal(err)
 	}
 	Git(t, dir, "init", "-q", "-b", "main")
+	// Keep line endings deterministic: GitHub's Windows runners set
+	// core.autocrlf=true globally, which would rewrite committed "\n" to
+	// "\r\n" on checkout and break exact content assertions.
+	Git(t, dir, "config", "core.autocrlf", "false")
 	if origin != "" {
 		Git(t, dir, "remote", "add", "origin", origin)
 	}

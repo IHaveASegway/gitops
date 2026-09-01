@@ -18,6 +18,9 @@ func clone(t *testing.T) string {
 	up := testutil.NewBare(t, root, "up")
 	p := filepath.Join(root, "clone")
 	testutil.Git(t, root, "clone", "-q", up, p)
+	// Deterministic line endings on Windows runners (core.autocrlf=true
+	// globally there would rewrite "\n" to "\r\n" on checkout).
+	testutil.Git(t, p, "config", "core.autocrlf", "false")
 	return p
 }
 
