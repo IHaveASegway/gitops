@@ -6,6 +6,44 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-01
+
+### Security
+- Tokens are now strictly scoped to their host: `GH_TOKEN`/`GITHUB_TOKEN`
+  are sent to github.com only. Enterprise hosts use `GH_ENTERPRISE_TOKEN`,
+  `GITHUB_ENTERPRISE_TOKEN` or `gh auth login --hostname <host>`; the
+  github.com fallback for unknown hosts is gone.
+- GitHub API pagination links are followed only on the same scheme and host
+  the listing started on.
+- Repository `clone_url`/`ssh_url`/`full_name` values reported by the API
+  are validated against the resolved host/owner/name; anything else is
+  discarded and the URL is rebuilt from the canonical identity.
+- `GITOPS_GITHUB_API` must be an `https://` URL (`http://` for localhost
+  only); the CLI prints the active base before making requests, and invalid
+  values are ignored with a warning.
+- Branch names given to CLI `branch`/`checkout` are validated with
+  `git check-ref-format` (the TUI already did this), refs are terminated
+  with `--` in git invocations, and an option-shaped `origin/HEAD` value is
+  ignored.
+- `govulncheck` runs in CI, and release checksums are signed with cosign
+  (keyless Sigstore); the release job's GoReleaser and cosign binaries are
+  version-pinned for reproducibility.
+- Homebrew now publishes a formula instead of a cask, removing the
+  post-install hook that stripped Gatekeeper's quarantine attribute.
+
+### Changed
+- CLI `reset` and `push` are gated like the TUI: they ask for confirmation
+  in a terminal and refuse with exit code 2 without one unless `--yes`/`-y`
+  is passed.
+- `--repos` names must be bare directory names inside the base directory;
+  path segments such as `../other` are rejected.
+- Windows is covered by the CI test matrix instead of compile-only.
+
+### Fixed
+- `push` no longer commits macOS `.DS_Store` files (`git add -A` picked
+  them up); a repository whose only changes are such junk files reports
+  "nothing to commit".
+
 ## [1.0.0] - 2026-08-25
 
 ### Added
@@ -55,6 +93,7 @@ All notable changes to this project are documented here. The format follows
 - Initial release: `pull`, `sync`, `reset`, `branch`, `push`, `checkout` and
   `status` across every repository in a directory, with an interactive TUI.
 
-[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/IHaveASegway/gitops/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/IHaveASegway/gitops/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/IHaveASegway/gitops/releases/tag/v0.1.0

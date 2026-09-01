@@ -56,9 +56,11 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainer, [@IHaveASegway](https://github.com/IHaveASegway),
-through a private report at
-https://github.com/IHaveASegway/gitops/security/advisories/new.
+reported privately to the project maintainer,
+[@IHaveASegway](https://github.com/IHaveASegway), via the contact options on
+that profile, or through GitHub's own
+[report abuse](https://github.com/contact/report-abuse) form. (Security
+vulnerabilities go through [SECURITY.md](SECURITY.md) instead.)
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the

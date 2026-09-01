@@ -91,25 +91,31 @@ model-driven test that asserts on `View()`.
   prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, `chore:`).
   They drive the release notes.
 - Update `CHANGELOG.md` under *Unreleased* for user-visible changes.
-- Fill in the pull request template. CI runs vet, lint, tests on Linux and
-  macOS, and cross-compiles for Windows.
+- Fill in the pull request template. CI runs lint, `-race` tests on Linux,
+  macOS and Windows, govulncheck, and cross-compiles every target.
 
 ## Releasing
 
 1. Move the *Unreleased* section of `CHANGELOG.md` under the new version.
 2. Tag and push: `git tag v1.2.0 && git push origin v1.2.0`.
 
+One-time, after the first release that publishes a formula: delete the old
+`Casks/gitops.rb` from the tap so `brew install IHaveASegway/tap/gitops` is
+unambiguous (existing cask installs migrate with
+`brew uninstall --cask gitops && brew install gitops`).
+
 The `Release` workflow runs GoReleaser, which builds archives for
 Linux/macOS/Windows on amd64/arm64 (reproducible: `-trimpath`, commit
-timestamps), generates checksums and release notes, stamps the version into
-the binary (`gitops --version`), and pushes an updated cask to
+timestamps), generates checksums and release notes, signs the checksums with cosign
+(keyless, via the workflow's OIDC identity), stamps the version into
+the binary (`gitops --version`), and pushes an updated formula to
 [IHaveASegway/homebrew-tap](https://github.com/IHaveASegway/homebrew-tap) so
 `brew install IHaveASegway/tap/gitops` (and `brew upgrade`) pick it up.
 
 The tap push authenticates over SSH with the `HOMEBREW_TAP_DEPLOY_KEY`
 repository secret: the private half of a write-enabled deploy key that is
 registered only on `homebrew-tap`, so it cannot touch anything else. Without
-it the release still succeeds and the cask is only written to `dist/`.
+it the release still succeeds and the formula is only written to `dist/`.
 
-`make snapshot` produces the same archives (and the cask under
+`make snapshot` produces the same archives (and the formula under
 `dist/homebrew/`) locally without publishing anything.

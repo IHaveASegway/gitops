@@ -23,7 +23,7 @@ brew install IHaveASegway/tap/gitops
 go install github.com/IHaveASegway/gitops/cmd/gitops@latest
 ```
 
-Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are on the [releases page](https://github.com/IHaveASegway/gitops/releases), with checksums.
+Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are on the [releases page](https://github.com/IHaveASegway/gitops/releases), with checksums signed via [cosign](https://docs.sigstore.dev/) (see [SECURITY.md](SECURITY.md) for verification).
 
 Or build from source (Go 1.27+):
 
@@ -61,9 +61,11 @@ gitops [command] [flags]
 | `status` | Show branch, ahead/behind counts and working tree status |
 | `branch` | Create a new branch from the default branch |
 | `checkout` | Checkout an existing branch |
-| `push` | Stage all changes, commit, and push current branch |
+| `push` | **Destructive.** Stage all changes, commit, and push current branch |
 | `reset` | **Destructive.** Discard all changes, force checkout default branch, pull |
 | `init` | Clone every repo of a GitHub org (or user) into a subdirectory |
+
+`reset` and `push` ask for confirmation in a terminal; without one (scripts, CI) they refuse to run unless `--yes`/`-y` is passed, exiting with code 2. `push` never commits macOS `.DS_Store` files. Note that `pull`, `sync` and `reset` leave every repository on its default branch — they do not return to the branch you were on (`branch` leaves each repo on the branch it just created).
 
 ### Flags
 
@@ -74,6 +76,7 @@ gitops [command] [flags]
 | `--jobs` | `-j` | Max repos processed in parallel (default: 8) |
 | `--name` | `-n` | Branch name (for `branch` and `checkout`) |
 | `--message` | `-m` | Commit message (for `push`) |
+| `--yes` | `-y` | Skip the confirmation prompt (for `push`, `reset` and `init`) |
 
 Flags may be given before or after positional arguments (`gitops init acme --dry-run` works).
 
@@ -114,7 +117,7 @@ gitops init acme --protocol ssh            # clone over SSH (default: gh's git_p
 
 Accepted forms: `https://github.com/acme`, `github.com/acme`, `acme`, `https://github.com/orgs/acme/repositories`, `git@github.com:acme/repo.git`, and GitHub Enterprise hosts such as `https://ghe.example.com/acme`. User accounts work the same way as organizations.
 
-**Authentication:** `GH_TOKEN`, `GITHUB_TOKEN`, or the token stored by `gh auth login` (in that order). Without a token only public repositories are listed. For HTTPS clones the token is passed to git through a process-scoped config override — it is never written to `.git/config` or shown in the process list.
+**Authentication:** `GH_TOKEN`, `GITHUB_TOKEN`, or the token stored by `gh auth login` (in that order). GitHub Enterprise hosts use `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` or `gh auth login --hostname <host>` instead — a github.com token is never sent to any other host. Without a token only public repositories are listed. For HTTPS clones the token is passed to git through a process-scoped config override — it is never written to `.git/config`, embedded in a remote URL, or passed on a command line (details in [SECURITY.md](SECURITY.md)).
 
 **Re-running is safe.** `init` lists the org again and clones only the repos that are missing; repos already present are skipped and reported. Archived repositories are skipped unless `--archived` is given.
 
@@ -162,7 +165,7 @@ gitops pull -r crm,admin,pay
 # Stash changes, pull latest, restore stash across all repos
 gitops sync
 
-# Nuke all local changes and reset to default branch
+# Nuke all local changes and reset to default branch (asks first; -y skips)
 gitops reset
 
 # Create a feature branch across multiple repos
@@ -183,7 +186,7 @@ gitops pull -d ~/Documents/GitHub/other-org
 
 ### Exit codes
 
-`0` everything succeeded · `1` at least one repository failed (details are in the output) · `2` `init` refused to clone (confirmation needed or duplicate detected) · `130` interrupted.
+`0` everything succeeded · `1` at least one repository failed (details are in the output) · `2` refused to run — `init` needs confirmation or detected a duplicate, or `reset`/`push` ran without a terminal and without `--yes` · `130` interrupted.
 
 ## How it works
 
