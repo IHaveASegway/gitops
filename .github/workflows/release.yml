@@ -22,7 +22,9 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
-      - uses: sigstore/cosign-installer@v4
+      # cosign-installer has no floating v4 major tag (only exact v4.x
+      # releases), so this is pinned to an exact published version.
+      - uses: sigstore/cosign-installer@v4.1.2
         with:
           # Pin the cosign binary too: v3 changed sign-blob's default output
           # to a bundle and deprecated the --output-signature/--output-certificate
