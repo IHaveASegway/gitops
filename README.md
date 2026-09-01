@@ -1,218 +1,186 @@
-# gitops
+<h1 align="center">gitops</h1>
 
-[![CI](https://github.com/IHaveASegway/gitops/actions/workflows/ci.yml/badge.svg)](https://github.com/IHaveASegway/gitops/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/IHaveASegway/gitops?sort=semver)](https://github.com/IHaveASegway/gitops/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/IHaveASegway/gitops)](https://goreportcard.com/report/github.com/IHaveASegway/gitops)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center">
+  Run a git operation across <strong>every repository in a directory at once</strong> — from an interactive TUI or a scriptable CLI.
+</p>
 
-Mass git operations across multiple repositories. Run commands against every repo in a directory — or a filtered subset — all at once, in parallel.
+<p align="center">
+  <a href="https://github.com/IHaveASegway/gitops/actions/workflows/ci.yml"><img src="https://github.com/IHaveASegway/gitops/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/IHaveASegway/gitops/releases"><img src="https://img.shields.io/github/v/release/IHaveASegway/gitops?sort=semver&color=00c2a8" alt="Release"></a>
+  <a href="https://github.com/IHaveASegway/gitops/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/IHaveASegway/gitops?color=00ADD8&logo=go" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
-Includes an interactive TUI, a headless CLI mode for scripting, and `gitops init` to clone an entire GitHub organization in one go.
+<p align="center">
+  <img src="docs/media/picker.svg" alt="gitops — selecting repositories in the interactive TUI" width="820">
+</p>
+
+Working across a dozen microservice repos means running the same `git pull` / `status` / `checkout` a dozen times. **gitops** does it once, in parallel, across all of them — and `gitops init` clones an entire GitHub organization in a single command so you have them to begin with.
 
 ## Install
-
-**Homebrew** (macOS and Linux):
 
 ```bash
 brew install IHaveASegway/tap/gitops
 ```
 
-**Go:**
+<details>
+<summary>Other ways to install</summary>
 
 ```bash
+# Go 1.27+
 go install github.com/IHaveASegway/gitops/cmd/gitops@latest
 ```
 
-Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are on the [releases page](https://github.com/IHaveASegway/gitops/releases), with checksums signed via [cosign](https://docs.sigstore.dev/) (see [SECURITY.md](SECURITY.md) for verification).
-
-Or build from source (Go 1.27+):
+Prebuilt binaries for Linux, macOS and Windows (amd64 / arm64) are on the
+[releases page](https://github.com/IHaveASegway/gitops/releases); the checksums
+are signed with [cosign](https://docs.sigstore.dev/) — see [SECURITY.md](SECURITY.md)
+to verify. Or build from source:
 
 ```bash
 git clone https://github.com/IHaveASegway/gitops.git
-cd gitops
-make build            # ./gitops
-sudo cp gitops /usr/local/bin/
+cd gitops && make build          # ./gitops
 ```
+</details>
 
 ## Quick start
 
 ```bash
-cd ~/Documents/GitHub
-gitops init https://github.com/my-org     # clones every repo you can see into ./my-org/
-cd my-org
-gitops                                    # interactive TUI
-gitops status                             # or use subcommands directly
+cd ~/Documents/GitHub/acme       # a directory holding several git repos
+gitops                           # launch the interactive TUI
 ```
 
-## Usage
-
-`cd` into a directory containing multiple git repos and run `gitops` to launch the interactive TUI, or use subcommands directly.
-
-```
-gitops [command] [flags]
-```
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `pull` | Checkout default branch and pull latest |
-| `sync` | Stash uncommitted changes, checkout default branch, pull, pop stash |
-| `status` | Show branch, ahead/behind counts and working tree status |
-| `branch` | Create a new branch from the default branch |
-| `checkout` | Checkout an existing branch |
-| `push` | **Destructive.** Stage all changes, commit, and push current branch |
-| `reset` | **Destructive.** Discard all changes, force checkout default branch, pull |
-| `init` | Clone every repo of a GitHub org (or user) into a subdirectory |
-
-`reset` and `push` ask for confirmation in a terminal; without one (scripts, CI) they refuse to run unless `--yes`/`-y` is passed, exiting with code 2. `push` never commits macOS `.DS_Store` files. Note that `pull`, `sync` and `reset` leave every repository on its default branch — they do not return to the branch you were on (`branch` leaves each repo on the branch it just created).
-
-### Flags
-
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--dir` | `-d` | Base directory containing repos (default: current directory) |
-| `--repos` | `-r` | Comma-separated list of repo names to target |
-| `--jobs` | `-j` | Max repos processed in parallel (default: 8) |
-| `--name` | `-n` | Branch name (for `branch` and `checkout`) |
-| `--message` | `-m` | Commit message (for `push`) |
-| `--yes` | `-y` | Skip the confirmation prompt (for `push`, `reset` and `init`) |
-
-Flags may be given before or after positional arguments (`gitops init acme --dry-run` works).
-
-### Interactive TUI
-
-Run `gitops` with no subcommand to launch the TUI:
+Prefer to script it? Every operation is also a subcommand:
 
 ```bash
-cd ~/Documents/GitHub/my-org
-gitops
+gitops status                    # branch, ahead/behind and changes, per repo
+gitops pull                      # fast-forward each repo's default branch
+gitops branch -n feature/login   # create the same branch across repos
 ```
 
-The header always shows which directory you are operating on and how many repos are dirty, ahead or behind.
+Starting on a fresh machine? Clone a whole org first, then work in it:
+
+```bash
+cd ~/Documents/GitHub
+gitops init github.com/acme      # → ./acme/<repo> for every repo you can see
+cd acme && gitops
+```
+
+## The interactive TUI
+
+Run `gitops` with no arguments inside a directory of repositories. Pick an
+operation, choose which repos it runs on, confirm anything destructive, and
+watch it run live. The header always shows where you are and how many repos are
+dirty, ahead or behind.
+
+<p align="center">
+  <img src="docs/media/menu.svg" alt="gitops operation menu" width="760">
+</p>
 
 | View | Keys |
 |------|------|
-| Menu | `↑/↓` move · `enter` select · `r` rescan directory · `q` quit |
-| Repo picker | `space` toggle · `a` all · `n` none · `i` invert · `/` filter · `enter` continue · `esc` back |
-| Text input | `enter` confirm · `esc` back (branch names are validated with `git check-ref-format`) |
-| Confirmation | `y` confirm · `esc` back — shown for `reset`, `push` and `init` |
-| Running | `esc` cancel (running git processes are stopped) · `ctrl+c` cancel and quit |
-| Results | `↑/↓` move · `enter` expand full output · `e` expand all · `f` failures only · `esc` back to menu · `q` quit |
+| **Menu** | `↑`/`↓` move · `enter` select · `r` rescan · `q` quit |
+| **Repo picker** | `space` toggle · `a` all · `n` none · `i` invert · `/` filter · `enter` continue |
+| **Confirm** *(reset · push · init)* | `y` confirm · `esc` back |
+| **Running** | `esc` cancel (kills in-flight git) · `ctrl+c` quit |
+| **Results** | `↑`/`↓` move · `enter` expand · `f` failures only · `esc` menu |
 
-The picker shows each repo's branch, ahead/behind counts (`↑1 ↓2`) and the number of changed files (`*3`). Results of every run are printed to the terminal again when you quit, so they stay in your scrollback. Mouse wheel scrolling works in all lists.
+## The CLI
 
-If you start `gitops` in a directory without repositories, the menu offers `init`.
+The same operations, headless — for scripts, CI, and one-liners. Output is
+plain and colorless when piped, so it composes cleanly.
 
-### `gitops init` — clone a whole organization
+<p align="center">
+  <img src="docs/media/status.svg" alt="gitops status output across five repositories" width="640">
+</p>
+
+| Command | What it does |
+|---------|--------------|
+| `pull` | Check out the default branch and fast-forward it |
+| `sync` | Stash changes, pull the default branch, restore the stash |
+| `status` | Branch, ahead/behind counts and changed files |
+| `branch -n <name>` | Create a branch from an up-to-date default branch |
+| `checkout -n <ref>` | Check out an existing branch, tag or ref |
+| `push -m <msg>` | Stage all changes, commit, and push the current branch |
+| `reset` | **Destructive** — discard all changes, force to default, pull |
+| `init <org>` | Clone every repo of a GitHub org or user into a subdirectory |
+
+Common flags: `-d/--dir` (target directory), `-r/--repos a,b,c` (a subset),
+`-j/--jobs` (parallelism), `-y/--yes` (skip confirmation). Flags may come before
+or after arguments.
 
 ```bash
-cd ~/Documents/GitHub
-gitops init https://github.com/acme        # → ~/Documents/GitHub/acme/<repo> for every repo
+gitops pull -r crm,admin,pay                 # only these repos
+gitops push -y -m "fix: bump deps"           # commit + push everything (‑y in scripts)
+gitops sync -d ~/Documents/GitHub/other-org  # operate on another directory
+```
+
+<details>
+<summary>Cloning an organization — <code>gitops init</code></summary>
+
+```bash
+gitops init https://github.com/acme       # → ~/Documents/GitHub/acme/<repo>
 gitops init acme --dry-run                 # show the plan, clone nothing
 gitops init acme -r crm,admin              # only these repos
-gitops init acme --archived --no-forks     # include archived repos, skip forks
-gitops init acme --protocol ssh            # clone over SSH (default: gh's git_protocol setting, else https)
+gitops init acme --archived --no-forks     # include archived, skip forks
+gitops init acme --protocol ssh            # clone over SSH
 ```
 
-Accepted forms: `https://github.com/acme`, `github.com/acme`, `acme`, `https://github.com/orgs/acme/repositories`, `git@github.com:acme/repo.git`, and GitHub Enterprise hosts such as `https://ghe.example.com/acme`. User accounts work the same way as organizations.
+Accepts `https://github.com/acme`, `github.com/acme`, `acme`,
+`git@github.com:acme/repo.git`, and GitHub Enterprise hosts. **Re-running is
+safe** — it clones only the repos you're missing. Before cloning, `init` looks
+at the `origin` remotes around the target directory and, if the org already
+exists somewhere else (a differently-named folder, loose clones, or the
+directory you're standing in), it warns and suggests the `--here` command that
+tops up the existing checkout instead of duplicating it.
 
-**Authentication:** `GH_TOKEN`, `GITHUB_TOKEN`, or the token stored by `gh auth login` (in that order). GitHub Enterprise hosts use `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` or `gh auth login --hostname <host>` instead — a github.com token is never sent to any other host. Without a token only public repositories are listed. For HTTPS clones the token is passed to git through a process-scoped config override — it is never written to `.git/config`, embedded in a remote URL, or passed on a command line (details in [SECURITY.md](SECURITY.md)).
-
-**Re-running is safe.** `init` lists the org again and clones only the repos that are missing; repos already present are skipped and reported. Archived repositories are skipped unless `--archived` is given.
-
-**Duplicate detection.** Before cloning anything, `init` looks at the `origin` remotes of the repositories around the target directory (the base directory and its parent, two levels deep). If it finds repos of the same organization somewhere other than the target — an org folder with a different name, loose clones next to it, or the directory you are already standing in — it warns and tells you the command that adds only the missing repos to that checkout instead:
-
-```
-  Organization: aspyn-io  https://github.com/aspyn-io
-  Target:       ~/Documents/GitHub/aspyn-io
-  Protocol:     https
-  Repos:        98 repos · 79 to clone · 19 archived skipped
-
-  ⚠ Existing checkout of aspyn-io found at ~/Documents/GitHub/aspyn (49 repos: admin, audit, automations, beacon, communications, … +44).
-    Cloning into ~/Documents/GitHub/aspyn-io would duplicate those repos.
-    To add only the missing repos to that checkout instead:  gitops init aspyn-io -d ~/Documents/GitHub/aspyn --here
-
-  Clone 79 repos into ~/Documents/GitHub/aspyn-io anyway? [y/N]
-```
-
-Interactively the default answer is *No*; with `--yes` (or without a terminal) a detected duplicate aborts with exit code 2 unless `--force` is given. `--here` clones into `--dir` itself instead of creating an `<org>` subdirectory. If a directory whose name matches the org (ignoring case) already exists, it is reused — `Acme/` and `acme/` never end up side by side.
-
-In the TUI the same plan is shown as a checklist (pick which repos to clone) followed by the warnings; `h` switches to "clone into this directory", `u` switches to "add to the existing checkout".
+**Authentication:** `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth login` (github.com);
+`GH_ENTERPRISE_TOKEN` or `gh auth login --hostname <host>` for Enterprise.
+Without a token, only public repositories are listed. Tokens are scoped to their
+host and passed to git through a process-scoped config override — never written
+to `.git/config` or a command line.
 
 | `init` flag | Description |
 |-------------|-------------|
-| `-d, --dir` | Base directory; the `<org>` folder is created inside it (default: cwd) |
-| `--here` | Clone directly into `--dir` (no `<org>` subdirectory) |
-| `-r, --repos` | Only clone these repos (comma-separated) |
+| `-d, --dir` | Base directory; the `<org>` folder is created inside it |
+| `--here` | Clone into `--dir` itself (no `<org>` subdirectory) |
+| `-r, --repos` | Only clone these repos |
 | `--protocol` | `ssh` or `https` |
-| `--archived` | Include archived repositories |
-| `--no-forks` | Skip forked repositories |
+| `--archived` / `--no-forks` | Include archived / skip forked repositories |
 | `--dry-run` | Print the plan and exit |
 | `-y, --yes` | Skip the confirmation prompt |
 | `--force` | Clone even if an existing checkout was detected |
-| `-j, --jobs` | Parallel clones (default: 8) |
+</details>
 
-### CLI examples
+## Safety
 
-```bash
-# Pull latest on default branch for all repos in current directory
-gitops pull
+gitops can touch dozens of repositories at once, so the sharp edges are guarded:
 
-# Pull only specific repos
-gitops pull -r crm,admin,pay
+- **`reset` and `push` confirm before running** in a terminal, and refuse
+  (exit `2`) without one unless you pass `--yes` — an unattended `gitops reset`
+  can't silently wipe every repo.
+- **`push` never commits `.DS_Store`** or other OS junk.
+- **Tokens are host-scoped** and never leak to another host; release binaries
+  ship with cosign-signed checksums. Details in [SECURITY.md](SECURITY.md).
+- `pull`, `sync` and `reset` leave each repo on its **default branch** (they
+  don't return you to where you were); `branch` leaves you on the new branch.
 
-# Stash changes, pull latest, restore stash across all repos
-gitops sync
-
-# Nuke all local changes and reset to default branch (asks first; -y skips)
-gitops reset
-
-# Create a feature branch across multiple repos
-gitops branch -n feature/new-thing -r crm,admin,field-service
-
-# Stage, commit, and push all repos on their current branch
-gitops push -m "fix: update dependencies"
-
-# Check status of everything (multi-line output lists the changed files)
-gitops status
-
-# Checkout an existing branch
-gitops checkout -n feature/new-thing
-
-# Operate on a different directory
-gitops pull -d ~/Documents/GitHub/other-org
-```
-
-### Exit codes
-
-`0` everything succeeded · `1` at least one repository failed (details are in the output) · `2` refused to run — `init` needs confirmation or detected a duplicate, or `reset`/`push` ran without a terminal and without `--yes` · `130` interrupted.
+**Exit codes:** `0` all succeeded · `1` at least one repo failed · `2` refused
+(needs `--yes`, or `init` found a duplicate) · `130` interrupted.
 
 ## How it works
 
-- Auto-discovers git repositories (directories containing `.git`, worktrees included) one level below the target directory
-- Detects the default branch per repo via `origin/HEAD`, then `origin/main` / `origin/master`, then local branches
-- Runs operations with a bounded worker pool (`--jobs`); Ctrl-C kills the in-flight git processes instead of orphaning them
-- git never prompts for credentials (`GIT_TERMINAL_PROMPT=0`), so a repo without access fails fast instead of hanging the batch
-- Colors are disabled automatically when output is not a terminal or `NO_COLOR` is set
-- TUI built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss); CLI powered by [urfave/cli](https://github.com/urfave/cli)
+- Discovers git repositories one level below the target directory (worktrees included).
+- Detects each repo's default branch via `origin/HEAD`, then `main`/`master`.
+- Runs with a bounded worker pool (`--jobs`); Ctrl-C kills in-flight git, never orphans it.
+- git never prompts for credentials (`GIT_TERMINAL_PROMPT=0`), so a repo you can't reach fails fast instead of hanging the batch.
+- Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) · [Lip Gloss](https://github.com/charmbracelet/lipgloss) · [urfave/cli](https://github.com/urfave/cli).
 
-## Project layout
+## Contributing
 
-```
-cmd/gitops/        entry point
-internal/cli       command line (subcommands, flags, init command)
-internal/tui       interactive UI, one file per view
-internal/ops       the git operations
-internal/clone     init: planning, duplicate detection, cloning
-internal/github    GitHub API client and org-name parsing
-internal/git       running git, inspecting and discovering repositories
-internal/runner    bounded-parallel executor with progress events
-internal/report    CLI output
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, testing approach and release process. Changes are tracked in [CHANGELOG.md](CHANGELOG.md); security issues go through [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, testing
+approach and release process. Changes are tracked in [CHANGELOG.md](CHANGELOG.md);
+security reports go through [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+[MIT](LICENSE).
