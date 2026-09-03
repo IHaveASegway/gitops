@@ -38,20 +38,60 @@ func TestStatusSyncResetPull(t *testing.T) {
 	if !r.Success || !strings.HasPrefix(r.Output, "[main] 1 changed\n") || !strings.Contains(r.Output, "M README.md") {
 		t.Errorf("dirty status = %+v", r)
 	}
-	if r := Sync(ctx, repo); !r.Success || r.Output != "already up to date + stash restored" {
+	if r := Sync(false)(ctx, repo); !r.Success || r.Output != "already up to date + stash restored" {
 		t.Errorf("sync = %+v", r)
 	}
 	if data, _ := os.ReadFile(filepath.Join(repo, "README.md")); string(data) != "changed" {
 		t.Error("sync did not restore the local change")
 	}
-	if r := Reset(ctx, repo); !r.Success || r.Output != "reset to main" {
+	if r := Reset(false)(ctx, repo); !r.Success || r.Output != "reset to main" {
 		t.Errorf("reset = %+v", r)
 	}
 	if data, _ := os.ReadFile(filepath.Join(repo, "README.md")); string(data) != "hi\n" {
 		t.Error("reset did not discard the local change")
 	}
-	if r := Pull(ctx, repo); !r.Success || r.Output != "Already up to date." {
+	if r := Pull(false)(ctx, repo); !r.Success || r.Output != "Already up to date." {
 		t.Errorf("pull = %+v", r)
+	}
+}
+
+// TestPullUpdatesSubmodulesUnlessSkipped clones a repo whose submodule is
+// registered but not yet checked out (as after a plain, non-recursive
+// clone) and confirms Pull initializes it, while skipSubmodules leaves it
+// alone.
+func TestPullUpdatesSubmodulesUnlessSkipped(t *testing.T) {
+	testutil.Identity(t)
+	t.Setenv("GIT_ALLOW_PROTOCOL", "file") // the submodule's origin is a local file:// path
+	ctx := context.Background()
+	root := t.TempDir()
+
+	libBare := testutil.NewBare(t, root, "lib")
+
+	work := filepath.Join(root, "work")
+	testutil.NewRepo(t, work, "", true)
+	testutil.Git(t, work, "-c", "protocol.file.allow=always", "submodule", "-q", "add", libBare, "vendor/lib")
+	testutil.Git(t, work, "commit", "-qm", "add submodule")
+	parentBare := filepath.Join(root, "parent.git")
+	testutil.Git(t, root, "clone", "-q", "--bare", work, parentBare)
+
+	repo := filepath.Join(root, "clone")
+	testutil.Git(t, root, "clone", "-q", parentBare, repo)
+	testutil.Git(t, repo, "config", "core.autocrlf", "false")
+
+	subGit := filepath.Join(repo, "vendor", "lib", ".git")
+
+	if r := Pull(true)(ctx, repo); !r.Success || strings.Contains(r.Output, "submodule") {
+		t.Fatalf("pull (skip-submodules) = %+v", r)
+	}
+	if _, err := os.Stat(subGit); err == nil {
+		t.Error("skip-submodules should leave the submodule uninitialized")
+	}
+
+	if r := Pull(false)(ctx, repo); !r.Success || !strings.Contains(r.Output, "submodules updated") {
+		t.Errorf("pull = %+v", r)
+	}
+	if _, err := os.Stat(subGit); err != nil {
+		t.Error("submodule should be initialized after pull")
 	}
 }
 
@@ -59,13 +99,13 @@ func TestBranchCheckoutPush(t *testing.T) {
 	ctx := context.Background()
 	repo := clone(t)
 
-	if r := CreateBranch("feature/x")(ctx, repo); !r.Success || r.Output != "created feature/x from main" {
+	if r := CreateBranch("feature/x", false)(ctx, repo); !r.Success || r.Output != "created feature/x from main" {
 		t.Errorf("branch = %+v", r)
 	}
-	if r := Checkout("main")(ctx, repo); !r.Success || r.Output != "on main" {
+	if r := Checkout("main", false)(ctx, repo); !r.Success || r.Output != "on main" {
 		t.Errorf("checkout = %+v", r)
 	}
-	if r := Checkout("nope")(ctx, repo); r.Success || !strings.HasPrefix(r.Error, "checkout: ") {
+	if r := Checkout("nope", false)(ctx, repo); r.Success || !strings.HasPrefix(r.Error, "checkout: ") {
 		t.Errorf("bad checkout = %+v", r)
 	}
 	if r := Push("msg")(ctx, repo); !r.Success || r.Output != "nothing to commit" {

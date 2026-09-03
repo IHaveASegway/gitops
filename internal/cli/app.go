@@ -43,11 +43,13 @@ func newApp() *cli.App {
 		Commands: []*cli.Command{
 			repoCommand(opCommand{
 				name: "pull", usage: "Checkout default branch and pull latest",
-				build: func(*cli.Context) runner.Func { return ops.Pull },
+				flags: []cli.Flag{skipSubmodulesFlag()},
+				build: func(c *cli.Context) runner.Func { return ops.Pull(c.Bool("skip-submodules")) },
 			}),
 			repoCommand(opCommand{
 				name: "sync", usage: "Stash changes, checkout default branch, pull, pop stash",
-				build: func(*cli.Context) runner.Func { return ops.Sync },
+				flags: []cli.Flag{skipSubmodulesFlag()},
+				build: func(c *cli.Context) runner.Func { return ops.Sync(c.Bool("skip-submodules")) },
 			}),
 			repoCommand(opCommand{
 				name: "status", usage: "Show branch, ahead/behind and working tree status for all repos",
@@ -55,15 +57,15 @@ func newApp() *cli.App {
 			}),
 			repoCommand(opCommand{
 				name: "branch", usage: "Create a new branch from the default branch",
-				flags: []cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Name of the new branch", Required: true}},
+				flags: []cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Name of the new branch", Required: true}, skipSubmodulesFlag()},
 				check: branchNameOK,
-				build: func(c *cli.Context) runner.Func { return ops.CreateBranch(c.String("name")) },
+				build: func(c *cli.Context) runner.Func { return ops.CreateBranch(c.String("name"), c.Bool("skip-submodules")) },
 			}),
 			repoCommand(opCommand{
 				name: "checkout", usage: "Checkout an existing branch",
-				flags: []cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Branch name to checkout", Required: true}},
+				flags: []cli.Flag{&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Branch name to checkout", Required: true}, skipSubmodulesFlag()},
 				check: func(c *cli.Context) error { return git.CheckRefArg(c.String("name")) },
-				build: func(c *cli.Context) runner.Func { return ops.Checkout(c.String("name")) },
+				build: func(c *cli.Context) runner.Func { return ops.Checkout(c.String("name"), c.Bool("skip-submodules")) },
 			}),
 			repoCommand(opCommand{
 				name: "push", usage: "Stage all changes, commit, and push the current branch",
@@ -79,8 +81,8 @@ func newApp() *cli.App {
 			}),
 			repoCommand(opCommand{
 				name: "reset", usage: "Discard ALL local changes, force checkout default branch, pull",
-				flags: []cli.Flag{yesFlag()},
-				build: func(*cli.Context) runner.Func { return ops.Reset },
+				flags: []cli.Flag{yesFlag(), skipSubmodulesFlag()},
+				build: func(c *cli.Context) runner.Func { return ops.Reset(c.Bool("skip-submodules")) },
 				warn: func(_ *cli.Context, n int) string {
 					return fmt.Sprintf("reset will permanently discard all uncommitted changes and untracked files in %s, then force-checkout the default branch and pull.",
 						format.Plural(n, "repository"))
@@ -104,6 +106,10 @@ func dirFlag() cli.Flag {
 
 func yesFlag() cli.Flag {
 	return &cli.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Do not ask for confirmation"}
+}
+
+func skipSubmodulesFlag() cli.Flag {
+	return &cli.BoolFlag{Name: "skip-submodules", Usage: "Do not update submodules (git submodule update --init --recursive)"}
 }
 
 // opCommand describes one mass-git subcommand.

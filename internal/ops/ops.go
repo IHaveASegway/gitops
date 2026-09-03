@@ -13,97 +13,126 @@ import (
 	"github.com/IHaveASegway/gitops/internal/runner"
 )
 
-// Pull checks out the default branch and fast-forwards it.
-func Pull(ctx context.Context, repo string) runner.Result {
-	name := filepath.Base(repo)
-	branch := git.DefaultBranch(ctx, repo)
+// syncSubmodules updates repo's submodules (git submodule update --init
+// --recursive) when it declares any and skip is false. It returns a suffix
+// to append to a successful op's Output; a failed update is reported as a
+// warning rather than turning the whole operation into a failure, since the
+// primary checkout/pull already succeeded.
+func syncSubmodules(ctx context.Context, repo string, skip bool) string {
+	if skip || !git.HasSubmodules(repo) {
+		return ""
+	}
+	if _, err := git.Run(ctx, repo, "submodule", "update", "--init", "--recursive"); err != nil {
+		return fmt.Sprintf(" (warning: submodule update failed: %v)", err)
+	}
+	return " + submodules updated"
+}
 
-	if _, err := git.Run(ctx, repo, "checkout", branch, "--"); err != nil {
-		return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
+// Pull checks out the default branch and fast-forwards it, then updates
+// submodules unless skipSubmodules is set.
+func Pull(skipSubmodules bool) runner.Func {
+	return func(ctx context.Context, repo string) runner.Result {
+		name := filepath.Base(repo)
+		branch := git.DefaultBranch(ctx, repo)
+
+		if _, err := git.Run(ctx, repo, "checkout", branch, "--"); err != nil {
+			return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
+		}
+		out, err := git.Run(ctx, repo, "pull", "--ff-only")
+		if err != nil {
+			return runner.Result{Repo: name, Error: fmt.Sprintf("pull: %v", err)}
+		}
+		if out == "" {
+			out = "Already up to date."
+		}
+		out += syncSubmodules(ctx, repo, skipSubmodules)
+		return runner.Result{Repo: name, Success: true, Output: out}
 	}
-	out, err := git.Run(ctx, repo, "pull", "--ff-only")
-	if err != nil {
-		return runner.Result{Repo: name, Error: fmt.Sprintf("pull: %v", err)}
-	}
-	if out == "" {
-		out = "Already up to date."
-	}
-	return runner.Result{Repo: name, Success: true, Output: out}
 }
 
 // Sync stashes local changes (untracked files included), pulls the default
-// branch and restores the stash.
-func Sync(ctx context.Context, repo string) runner.Result {
-	name := filepath.Base(repo)
-	branch := git.DefaultBranch(ctx, repo)
+// branch, restores the stash and updates submodules unless skipSubmodules
+// is set.
+func Sync(skipSubmodules bool) runner.Func {
+	return func(ctx context.Context, repo string) runner.Result {
+		name := filepath.Base(repo)
+		branch := git.DefaultBranch(ctx, repo)
 
-	status, err := git.Run(ctx, repo, "status", "--porcelain")
-	if err != nil {
-		// Don't silently skip the auto-stash on a failed status read: local
-		// changes could be lost to the checkout below.
-		return runner.Result{Repo: name, Error: fmt.Sprintf("status: %v", err)}
-	}
-	stashed := false
-	if status != "" {
-		if _, err := git.Run(ctx, repo, "stash", "push", "--include-untracked", "-m", "gitops-sync-auto-stash"); err != nil {
-			return runner.Result{Repo: name, Error: fmt.Sprintf("stash: %v", err)}
+		status, err := git.Run(ctx, repo, "status", "--porcelain")
+		if err != nil {
+			// Don't silently skip the auto-stash on a failed status read: local
+			// changes could be lost to the checkout below.
+			return runner.Result{Repo: name, Error: fmt.Sprintf("status: %v", err)}
 		}
-		stashed = true
-	}
-	restore := func() {
+		stashed := false
+		if status != "" {
+			if _, err := git.Run(ctx, repo, "stash", "push", "--include-untracked", "-m", "gitops-sync-auto-stash"); err != nil {
+				return runner.Result{Repo: name, Error: fmt.Sprintf("stash: %v", err)}
+			}
+			stashed = true
+		}
+		restore := func() {
+			if stashed {
+				_, _ = git.Run(ctx, repo, "stash", "pop")
+			}
+		}
+
+		if _, err := git.Run(ctx, repo, "checkout", branch, "--"); err != nil {
+			restore()
+			return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
+		}
+		pullOut, err := git.Run(ctx, repo, "pull", "--ff-only")
+		if err != nil {
+			restore()
+			return runner.Result{Repo: name, Error: fmt.Sprintf("pull: %v", err)}
+		}
+
+		msg := "already up to date"
+		if pullOut != "" && pullOut != "Already up to date." {
+			msg = "updated " + branch
+		}
 		if stashed {
-			_, _ = git.Run(ctx, repo, "stash", "pop")
+			if _, err := git.Run(ctx, repo, "stash", "pop"); err != nil {
+				return runner.Result{Repo: name, Error: msg + ", but stash pop conflicted — resolve with `git stash pop` in the repo"}
+			}
+			msg += " + stash restored"
 		}
+		msg += syncSubmodules(ctx, repo, skipSubmodules)
+		return runner.Result{Repo: name, Success: true, Output: msg}
 	}
-
-	if _, err := git.Run(ctx, repo, "checkout", branch, "--"); err != nil {
-		restore()
-		return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
-	}
-	pullOut, err := git.Run(ctx, repo, "pull", "--ff-only")
-	if err != nil {
-		restore()
-		return runner.Result{Repo: name, Error: fmt.Sprintf("pull: %v", err)}
-	}
-
-	msg := "already up to date"
-	if pullOut != "" && pullOut != "Already up to date." {
-		msg = "updated " + branch
-	}
-	if stashed {
-		if _, err := git.Run(ctx, repo, "stash", "pop"); err != nil {
-			return runner.Result{Repo: name, Error: msg + ", but stash pop conflicted — resolve with `git stash pop` in the repo"}
-		}
-		msg += " + stash restored"
-	}
-	return runner.Result{Repo: name, Success: true, Output: msg}
 }
 
 // Reset discards all local changes and untracked files, force-checks out
-// the default branch and pulls. It is destructive by design.
-func Reset(ctx context.Context, repo string) runner.Result {
-	name := filepath.Base(repo)
-	branch := git.DefaultBranch(ctx, repo)
+// the default branch, pulls and updates submodules unless skipSubmodules is
+// set. It is destructive by design.
+func Reset(skipSubmodules bool) runner.Func {
+	return func(ctx context.Context, repo string) runner.Result {
+		name := filepath.Base(repo)
+		branch := git.DefaultBranch(ctx, repo)
 
-	_, _ = git.Run(ctx, repo, "checkout", ".")
-	_, _ = git.Run(ctx, repo, "clean", "-fd")
+		_, _ = git.Run(ctx, repo, "checkout", ".")
+		_, _ = git.Run(ctx, repo, "clean", "-fd")
 
-	if _, err := git.Run(ctx, repo, "checkout", "-f", branch, "--"); err != nil {
-		return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
+		if _, err := git.Run(ctx, repo, "checkout", "-f", branch, "--"); err != nil {
+			return runner.Result{Repo: name, Error: fmt.Sprintf("checkout %s: %v", branch, err)}
+		}
+		out, err := git.Run(ctx, repo, "pull", "--ff-only")
+		if err != nil {
+			return runner.Result{Repo: name, Error: fmt.Sprintf("pull: %v", err)}
+		}
+		msg := "reset + updated " + branch
+		if out == "" || out == "Already up to date." {
+			msg = "reset to " + branch
+		}
+		msg += syncSubmodules(ctx, repo, skipSubmodules)
+		return runner.Result{Repo: name, Success: true, Output: msg}
 	}
-	out, err := git.Run(ctx, repo, "pull", "--ff-only")
-	if err != nil {
-		return runner.Result{Repo: name, Error: fmt.Sprintf("pull: %v", err)}
-	}
-	if out == "" || out == "Already up to date." {
-		return runner.Result{Repo: name, Success: true, Output: "reset to " + branch}
-	}
-	return runner.Result{Repo: name, Success: true, Output: "reset + updated " + branch}
 }
 
 // CreateBranch returns an operation that creates a branch from an
-// up-to-date default branch.
-func CreateBranch(branchName string) runner.Func {
+// up-to-date default branch and updates submodules unless skipSubmodules
+// is set.
+func CreateBranch(branchName string, skipSubmodules bool) runner.Func {
 	return func(ctx context.Context, repo string) runner.Result {
 		name := filepath.Base(repo)
 		base := git.DefaultBranch(ctx, repo)
@@ -117,7 +146,8 @@ func CreateBranch(branchName string) runner.Func {
 		if _, err := git.Run(ctx, repo, "checkout", "-b", branchName); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("create branch: %v", err)}
 		}
-		return runner.Result{Repo: name, Success: true, Output: fmt.Sprintf("created %s from %s", branchName, base)}
+		out := fmt.Sprintf("created %s from %s", branchName, base) + syncSubmodules(ctx, repo, skipSubmodules)
+		return runner.Result{Repo: name, Success: true, Output: out}
 	}
 }
 
@@ -182,14 +212,16 @@ func Push(message string) runner.Func {
 	}
 }
 
-// Checkout returns an operation that switches to an existing branch.
-func Checkout(branchName string) runner.Func {
+// Checkout returns an operation that switches to an existing branch and
+// updates submodules unless skipSubmodules is set.
+func Checkout(branchName string, skipSubmodules bool) runner.Func {
 	return func(ctx context.Context, repo string) runner.Result {
 		name := filepath.Base(repo)
 		if _, err := git.Run(ctx, repo, "checkout", branchName, "--"); err != nil {
 			return runner.Result{Repo: name, Error: fmt.Sprintf("checkout: %v", err)}
 		}
-		return runner.Result{Repo: name, Success: true, Output: "on " + branchName}
+		out := "on " + branchName + syncSubmodules(ctx, repo, skipSubmodules)
+		return runner.Result{Repo: name, Success: true, Output: out}
 	}
 }
 

@@ -105,8 +105,9 @@ plain and colorless when piped, so it composes cleanly.
 | `init <org>` | Clone every repo of a GitHub org or user into a subdirectory |
 
 Common flags: `-d/--dir` (target directory), `-r/--repos a,b,c` (a subset),
-`-j/--jobs` (parallelism), `-y/--yes` (skip confirmation). Flags may come before
-or after arguments.
+`-j/--jobs` (parallelism), `-y/--yes` (skip confirmation), `--skip-submodules`
+(don't update submodules on `pull`/`sync`/`reset`/`branch`/`checkout`). Flags
+may come before or after arguments.
 
 ```bash
 gitops pull -r crm,admin,pay                 # only these repos
@@ -170,6 +171,7 @@ gitops can touch dozens of repositories at once, so the sharp edges are guarded:
 ## How it works
 
 - Discovers git repositories one level below the target directory (worktrees and submodules included).
+- `pull`, `sync`, `reset`, `branch` and `checkout` run `git submodule update --init --recursive` afterward when a repo has submodules; pass `--skip-submodules` to leave them alone.
 - Detects each repo's default branch via `origin/HEAD`, then `main`/`master`.
 - Runs with a bounded worker pool (`--jobs`); Ctrl-C kills in-flight git, never orphans it.
 - git never prompts for credentials (`GIT_TERMINAL_PROMPT=0`), so a repo you can't reach fails fast instead of hanging the batch.

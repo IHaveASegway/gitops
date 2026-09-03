@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `pull`, `sync`, `reset`, `branch` and `checkout` now run `git submodule
+  update --init --recursive` automatically when a repo declares submodules,
+  so a plain (non-recursive) clone stays in sync. Pass `--skip-submodules`
+  to opt out.
 - Test coverage confirming that a real git submodule (whose working tree has
   a `.git` file rather than a `.git` directory) is discovered like any other
   repository by `IsRepo`/`Discover`.

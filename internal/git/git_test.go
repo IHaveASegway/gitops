@@ -156,6 +156,12 @@ func TestSubmoduleIsDiscoveredAsRepo(t *testing.T) {
 	if !IsRepo(sub) {
 		t.Error("submodule working tree should be recognized as a repo")
 	}
+	if !HasSubmodules(parent) {
+		t.Error("parent should report having submodules")
+	}
+	if HasSubmodules(sub) {
+		t.Error("the submodule itself declares no submodules")
+	}
 
 	repos, err := Discover(filepath.Join(parent, "vendor"))
 	if err != nil || len(repos) != 1 || repos[0] != sub {
