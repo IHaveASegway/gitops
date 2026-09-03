@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Test coverage confirming that a real git submodule (whose working tree has
+  a `.git` file rather than a `.git` directory) is discovered like any other
+  repository by `IsRepo`/`Discover`.
+
 ## [1.1.0] - 2026-09-01
 
 ### Security

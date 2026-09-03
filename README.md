@@ -169,7 +169,7 @@ gitops can touch dozens of repositories at once, so the sharp edges are guarded:
 
 ## How it works
 
-- Discovers git repositories one level below the target directory (worktrees included).
+- Discovers git repositories one level below the target directory (worktrees and submodules included).
 - Detects each repo's default branch via `origin/HEAD`, then `main`/`master`.
 - Runs with a bounded worker pool (`--jobs`); Ctrl-C kills in-flight git, never orphans it.
 - git never prompts for credentials (`GIT_TERMINAL_PROMPT=0`), so a repo you can't reach fails fast instead of hanging the batch.
