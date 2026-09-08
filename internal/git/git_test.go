@@ -137,3 +137,34 @@ func TestOriginURLScanAndDiscover(t *testing.T) {
 		t.Error("IsRepo mismatch")
 	}
 }
+
+// TestSubmoduleIsDiscoveredAsRepo checks out a real submodule, whose working
+// tree has a ".git" file (a "gitdir:" pointer) rather than a ".git"
+// directory, and confirms it is still recognized as a repository.
+func TestSubmoduleIsDiscoveredAsRepo(t *testing.T) {
+	root := t.TempDir()
+	upstream := testutil.NewBare(t, root, "lib")
+
+	parent := filepath.Join(root, "parent")
+	testutil.NewRepo(t, parent, "", true)
+	testutil.Git(t, parent, "-c", "protocol.file.allow=always", "submodule", "-q", "add", upstream, "vendor/lib")
+
+	sub := filepath.Join(parent, "vendor", "lib")
+	if info, err := os.Stat(filepath.Join(sub, ".git")); err != nil || info.IsDir() {
+		t.Fatalf(".git under a submodule should be a file, got err=%v isDir=%v", err, err == nil && info.IsDir())
+	}
+	if !IsRepo(sub) {
+		t.Error("submodule working tree should be recognized as a repo")
+	}
+	if !HasSubmodules(parent) {
+		t.Error("parent should report having submodules")
+	}
+	if HasSubmodules(sub) {
+		t.Error("the submodule itself declares no submodules")
+	}
+
+	repos, err := Discover(filepath.Join(parent, "vendor"))
+	if err != nil || len(repos) != 1 || repos[0] != sub {
+		t.Errorf("Discover(vendor) = %v, %v, want [%s]", repos, err, sub)
+	}
+}

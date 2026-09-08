@@ -14,6 +14,12 @@ func IsRepo(dir string) bool {
 	return err == nil
 }
 
+// HasSubmodules reports whether repo declares any submodules.
+func HasSubmodules(repo string) bool {
+	_, err := os.Stat(filepath.Join(repo, ".gitmodules"))
+	return err == nil
+}
+
 // gitDir resolves the actual .git directory of a working tree, following
 // "gitdir:" pointer files.
 func gitDir(repo string) string {

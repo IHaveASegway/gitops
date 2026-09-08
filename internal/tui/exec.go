@@ -18,17 +18,17 @@ func (m Model) opFunc() runner.Func {
 	value := strings.TrimSpace(m.input.Value())
 	switch m.op().name {
 	case "pull":
-		return ops.Pull
+		return ops.Pull(false)
 	case "sync":
-		return ops.Sync
+		return ops.Sync(false)
 	case "reset":
-		return ops.Reset
+		return ops.Reset(false)
 	case "branch":
-		return ops.CreateBranch(value)
+		return ops.CreateBranch(value, false)
 	case "push":
 		return ops.Push(value)
 	case "checkout":
-		return ops.Checkout(value)
+		return ops.Checkout(value, false)
 	default:
 		return ops.Status
 	}
