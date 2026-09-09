@@ -30,7 +30,7 @@ jobs:
           # to a bundle and deprecated the --output-signature/--output-certificate
           # flags .goreleaser.yaml uses. Bump deliberately alongside those flags.
           cosign-release: v2.6.5
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           # Pin the GoReleaser binary too, so this release-signing job is
