@@ -18,8 +18,9 @@ import (
 // is never sent to another host — a typo'd or hostile host name must not
 // receive it. gh's stored credentials are already looked up per host.
 func FindToken(host string) (token, source string) {
+	host = NormalizeHost(host)
 	envs := []string{"GH_TOKEN", "GITHUB_TOKEN"}
-	if !strings.EqualFold(host, "github.com") {
+	if host != "github.com" {
 		envs = []string{"GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
 	}
 	for _, name := range envs {
@@ -36,7 +37,7 @@ func FindToken(host string) (token, source string) {
 // DefaultProtocol returns "ssh" when the gh CLI is configured for SSH on
 // host, otherwise "https".
 func DefaultProtocol(host string) string {
-	if out, ok := gh("config", "get", "--host", host, "git_protocol"); ok && out == "ssh" {
+	if out, ok := gh("config", "get", "--host", NormalizeHost(host), "git_protocol"); ok && out == "ssh" {
 		return "ssh"
 	}
 	return "https"

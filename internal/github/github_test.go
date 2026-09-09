@@ -25,6 +25,16 @@ func TestParseOwner(t *testing.T) {
 		"https://ghe.example.com/acme":              {Host: "ghe.example.com", Owner: "acme"},
 		"ghe.example.com/acme":                      {Host: "ghe.example.com", Owner: "acme"},
 		"https://github.com/acme?tab=repositories":  {Host: "github.com", Owner: "acme"},
+		// Host spellings that resolve to github.com must normalize to it, or
+		// they take the Enterprise path: wrong API base, and the github.com
+		// token sent to a host it was never scoped for.
+		"https://www.github.com/acme":         {Host: "github.com", Owner: "acme"},
+		"https://WWW.GitHub.COM/acme":         {Host: "github.com", Owner: "acme"},
+		"www.github.com/acme":                 {Host: "github.com", Owner: "acme"},
+		"https://github.com./acme":            {Host: "github.com", Owner: "acme"},
+		"git@www.github.com:acme/widgets.git": {Host: "github.com", Owner: "acme"},
+		// ...but a www. prefix on any other host is a different host.
+		"https://www.ghe.example.com/acme": {Host: "www.ghe.example.com", Owner: "acme"},
 	}
 	for in, want := range good {
 		got, err := github.ParseOwner(in)

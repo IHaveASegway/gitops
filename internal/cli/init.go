@@ -58,6 +58,15 @@ GITHUB_ENTERPRISE_TOKEN, or gh auth login --hostname <host>.`,
 
 func runInit(c *cli.Context) error {
 	if c.NArg() != 1 {
+		// A value-taking flag with nothing after it makes urfave stop parsing
+		// flags at the org name, so the rest of the command line arrives here
+		// as positionals. Name the culprit rather than printing usage.
+		if all := c.Args().Slice(); len(all) > 1 {
+			if last := all[len(all)-1]; strings.HasPrefix(last, "-") && takesValue(c.Command.Flags, last) && !strings.Contains(last, "=") {
+				return fmt.Errorf("flag needs an argument: %s", last)
+			}
+			return fmt.Errorf("unexpected arguments: %s", strings.Join(all[1:], " "))
+		}
 		return errors.New("usage: gitops init <org-url-or-name> (see gitops init --help)")
 	}
 	ref, err := github.ParseOwner(c.Args().First())
@@ -133,6 +142,12 @@ func runInit(c *cli.Context) error {
 		Filter:  clone.Filter{Only: only, IncludeArchived: c.Bool("archived"), SkipForks: c.Bool("no-forks")},
 	})
 	plan.Print(os.Stdout, protocol, c.Bool("dry-run") || len(plan.Considered()) <= 40)
+	// A repo named with --repos that does not exist in the org is almost
+	// always a typo. Exiting 0 having cloned nothing makes that invisible to
+	// scripts and CI, so name it and fail.
+	if len(plan.Missing) > 0 {
+		return cli.Exit(fmt.Sprintf("no such repository in %s: %s", owner.Login, strings.Join(plan.Missing, ", ")), exitFailed)
+	}
 	if c.Bool("dry-run") {
 		return nil
 	}

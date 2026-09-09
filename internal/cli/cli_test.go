@@ -13,15 +13,21 @@ import (
 func TestInterspersedArgs(t *testing.T) {
 	app := newApp()
 	cases := map[string]string{
-		"gitops init acme --dry-run -d /x":        "gitops init --dry-run -d /x acme",
-		"gitops init --dry-run acme":              "gitops init --dry-run acme",
-		"gitops init acme -r a,b --yes --jobs 4":  "gitops init -r a,b --yes --jobs 4 acme",
-		"gitops init acme --protocol=ssh --force": "gitops init --protocol=ssh --force acme",
-		"gitops -d /base init acme --here":        "gitops -d /base init --here acme",
-		"gitops init acme -- --weird":             "gitops init acme --weird",
-		"gitops pull -r crm":                      "gitops pull -r crm",
-		"gitops nosuch acme --flag":               "gitops nosuch acme --flag",
-		"gitops --help":                           "gitops --help",
+		"gitops init acme --dry-run -d /x":        "gitops init --dry-run -d /x -- acme",
+		"gitops init --dry-run acme":              "gitops init --dry-run -- acme",
+		"gitops init acme -r a,b --yes --jobs 4":  "gitops init -r a,b --yes --jobs 4 -- acme",
+		"gitops init acme --protocol=ssh --force": "gitops init --protocol=ssh --force -- acme",
+		"gitops -d /base init acme --here":        "gitops -d /base init --here -- acme",
+		// "--" must survive the reordering: protecting a leading-dash operand
+		// is the only thing it does, and dropping it re-parsed it as a flag.
+		"gitops init acme -- --weird": "gitops init -- acme --weird",
+		// A dangling value flag is handed back untouched so urfave can report
+		// "flag needs an argument" instead of swallowing the org name.
+		"gitops init acme --repos":  "gitops init acme --repos",
+		"gitops init acme -d":       "gitops init acme -d",
+		"gitops pull -r crm":        "gitops pull -r crm",
+		"gitops nosuch acme --flag": "gitops nosuch acme --flag",
+		"gitops --help":             "gitops --help",
 	}
 	for in, want := range cases {
 		got := strings.Join(interspersedArgs(app, strings.Fields(in)), " ")

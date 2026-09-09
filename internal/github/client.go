@@ -134,7 +134,8 @@ type Client struct {
 
 // DefaultAPIBase returns the REST API base URL for a host.
 func DefaultAPIBase(host string) string {
-	if strings.EqualFold(host, "github.com") {
+	host = NormalizeHost(host)
+	if host == "github.com" {
 		return "https://api.github.com"
 	}
 	return "https://" + host + "/api/v3"
@@ -145,6 +146,7 @@ func DefaultAPIBase(host string) string {
 // is sent as a Bearer header to whatever the base names, so the override
 // must be https — or http on localhost only — and is otherwise ignored.
 func NewClient(host, token string) *Client {
+	host = NormalizeHost(host)
 	base, trusted := DefaultAPIBase(host), false
 	if v := os.Getenv("GITOPS_GITHUB_API"); v != "" {
 		if allowedAPIBase(v) {
@@ -380,4 +382,26 @@ func (c *Client) ListRepos(ctx context.Context, owner Owner, progress func(page,
 		return strings.ToLower(all[i].Name) < strings.ToLower(all[j].Name)
 	})
 	return all, nil
+}
+
+// LookupRepo fetches one repository by name. It exists to answer a question
+// the org listing cannot: whether a repository the listing omitted is really
+// gone. A repository that was renamed or transferred still resolves — the API
+// redirects to its current location — so the returned FullName distinguishes
+// a rename from a deletion, and a 404 is the only thing that means "gone".
+//
+// The returned Repo is display-only: FullName may name a different owner
+// after a transfer, so it is not passed through sanitizeRepo (which rebuilds
+// URLs from an assumed owner) and its clone URLs are cleared rather than
+// trusted.
+func (c *Client) LookupRepo(ctx context.Context, owner, name string) (Repo, error) {
+	var r Repo
+	if _, err := c.get(ctx, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name), &r); err != nil {
+		return Repo{}, err
+	}
+	if hasControl(r.FullName) || hasControl(r.Name) {
+		return Repo{}, fmt.Errorf("%s returned an invalid repository name", c.Host)
+	}
+	r.CloneURL, r.SSHURL = "", ""
+	return r, nil
 }
