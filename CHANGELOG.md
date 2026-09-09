@@ -6,7 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-09
+
 ### Added
+- `init` now reconciles a checkout with the organization: alongside cloning
+  repositories added since you last ran it, it reports checkouts you still
+  have that the listing no longer mentions. Nothing is removed on that basis
+  — each is looked up by name first, because absence from the listing is also
+  what a rename, a transfer, an archived repository under the default filters,
+  or a token that lost visibility looks like. Only a `404` counts as deleted.
+- `init --prune` removes the checkouts confirmed deleted on GitHub. A checkout
+  holding uncommitted changes, stashes, commits absent from every remote, or a
+  second remote is kept and reported instead, and the safety check is re-run
+  immediately before each deletion rather than trusted from the plan.
+  `--prune` is rejected with `--repos`, whose partial listing cannot say what
+  is gone.
 - `pull`, `sync`, `reset`, `branch` and `checkout` now run `git submodule
   update --init --recursive` automatically when a repo declares submodules,
   so a plain (non-recursive) clone stays in sync. Pass `--skip-submodules`
@@ -14,6 +28,33 @@ All notable changes to this project are documented here. The format follows
 - Test coverage confirming that a real git submodule (whose working tree has
   a `.git` file rather than a `.git` directory) is discovered like any other
   repository by `IsRepo`/`Discover`.
+
+### Fixed
+- Host spellings that resolve to github.com — `www.github.com`, a trailing
+  dot, mixed case — were treated as GitHub Enterprise hosts, so a URL copied
+  from the browser failed with a misleading "no organization or user named X"
+  and never matched an existing checkout. Hosts are now normalized once in
+  `ParseOwner`, and again in `FindToken`, `DefaultAPIBase`, `DefaultProtocol`
+  and `NewClient` so no caller can reintroduce the gap. This also restores the
+  documented guarantee that a github.com token is only ever sent to github.com.
+- `init --repos` with a misspelled repository name printed an advisory line and
+  exited `0` having cloned nothing; it now fails with `no such repository in
+  <org>`, so a typo is visible to scripts and CI.
+- A value-taking flag with no argument at the end of the command line
+  (`gitops init acme --repos`) had the organization name bound to it as its
+  value, producing a misleading usage error. It now reports `flag needs an
+  argument: --repos`.
+- The argument-reordering shim dropped `--`, so a `--`-protected operand was
+  still parsed as a flag. The separator is now preserved.
+
+### Changed
+- `runner.Run`'s documentation no longer claims targets start in order.
+  Dispatch is ordered and results keep the input order, but each worker emits
+  its own `Started` event after receiving an index, so concurrent workers can
+  interleave. The test that asserted strict start ordering was flaky in CI
+  (~1.4% under `-race`, and the cause of the red build on `main`); it now
+  asserts what `Run` guarantees — every target starts exactly once — which is
+  both deterministic and stricter than the ordering check it replaces.
 
 ## [1.1.0] - 2026-09-01
 
@@ -106,7 +147,8 @@ All notable changes to this project are documented here. The format follows
 - Initial release: `pull`, `sync`, `reset`, `branch`, `push`, `checkout` and
   `status` across every repository in a directory, with an interactive TUI.
 
-[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/IHaveASegway/gitops/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/IHaveASegway/gitops/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/IHaveASegway/gitops/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/IHaveASegway/gitops/releases/tag/v0.1.0

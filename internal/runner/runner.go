@@ -45,10 +45,12 @@ type Event struct {
 	Result  Result
 }
 
-// Run applies fn to every target using at most jobs workers. Targets start
-// in order and results keep the input order. onEvent, if non-nil, is called
-// serially from worker goroutines. When ctx is canceled, remaining targets
-// finish with the error "canceled".
+// Run applies fn to every target using at most jobs workers. Targets are
+// dispatched to workers in order and results keep the input order, but
+// Started events may be observed out of order: each worker emits its own
+// after receiving an index, so concurrent workers can interleave. onEvent,
+// if non-nil, is called serially from worker goroutines. When ctx is
+// canceled, remaining targets finish with the error "canceled".
 func Run(ctx context.Context, targets []string, fn Func, jobs int, onEvent func(Event)) []Result {
 	if jobs <= 0 {
 		jobs = DefaultJobs

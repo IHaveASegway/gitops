@@ -31,8 +31,15 @@ func interspersedArgs(app *cli.App, args []string) []string {
 				break
 			}
 			if strings.HasPrefix(r, "-") && len(r) > 1 {
+				// A value-taking flag with nothing after it would otherwise be
+				// moved in front of the positionals, letting urfave bind the
+				// org name as its value and report a misleading usage error.
+				// Hand the original argv back so urfave says what is wrong.
+				if takesValue(cmd.Flags, r) && !strings.Contains(r, "=") && j+1 >= len(rest) {
+					return args
+				}
 				flags = append(flags, r)
-				if takesValue(cmd.Flags, r) && !strings.Contains(r, "=") && j+1 < len(rest) {
+				if takesValue(cmd.Flags, r) && !strings.Contains(r, "=") {
 					j++
 					flags = append(flags, rest[j])
 				}
@@ -42,6 +49,12 @@ func interspersedArgs(app *cli.App, args []string) []string {
 		}
 		out := append([]string{}, args[:i+1]...)
 		out = append(out, flags...)
+		// Re-emit the separator so a positional is never re-parsed as a flag.
+		// Reordering drops the original "--", which is the one thing it exists
+		// to do; without this a "--"-protected operand is parsed as a flag.
+		if len(positional) > 0 {
+			out = append(out, "--")
+		}
 		return append(out, positional...)
 	}
 	return args

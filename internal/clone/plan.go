@@ -61,6 +61,40 @@ type Warning struct {
 	Nested bool     // Dir is the base dir itself: the new checkout would nest inside the old one
 }
 
+// OrphanStatus is what verification concluded about a checkout inside the
+// target directory that the organization listing did not mention.
+type OrphanStatus int
+
+const (
+	// OrphanUnverified means the API could not confirm anything: no token,
+	// a network error, a rate limit, or a permission error. Never treated as
+	// deleted — losing visibility of a repository looks exactly like this.
+	OrphanUnverified OrphanStatus = iota
+	OrphanGone                    // confirmed 404: deleted, or transferred to an owner you cannot see
+	OrphanRenamed                 // still exists under a different name
+	OrphanPresent                 // still exists and is visible: the listing simply did not include it
+)
+
+// Orphan is a repository that exists locally inside the target directory but
+// was not in the organization listing.
+//
+// A repository missing from the listing is not evidence that it was deleted:
+// it is also what a rename, a transfer, an archived repository under the
+// default filters, or a token that quietly lost visibility looks like. So an
+// Orphan carries the verified Status and never means "delete me" on its own.
+type Orphan struct {
+	Name     string // repository name recorded in the checkout's origin remote
+	Dir      string // absolute path of the checkout
+	Status   OrphanStatus
+	NewName  string   // current full name, when Status is OrphanRenamed
+	Detail   string   // why verification could not conclude, when Unverified
+	Blockers []string // local-only work that removing the checkout would destroy
+}
+
+// Removable reports whether this checkout is confirmed gone from the remote
+// and holds nothing that exists only on this machine.
+func (o Orphan) Removable() bool { return o.Status == OrphanGone && len(o.Blockers) == 0 }
+
 // Filter narrows which repositories are cloned.
 type Filter struct {
 	Only            map[string]bool // lowercase repo names; nil means all
@@ -89,6 +123,7 @@ type Plan struct {
 	Warnings  []Warning
 	Missing   []string // Filter.Only names that do not exist in the org
 	Foreign   int      // repos inside TargetDir that belong to other owners
+	Orphans   []Orphan // checkouts in TargetDir the org listing did not mention
 }
 
 // Count returns how many entries have the given action.
@@ -262,7 +297,34 @@ func BuildPlan(req Request) *Plan {
 		}
 	}
 	sort.Strings(p.Missing)
+	p.Orphans = findOrphans(req, existing)
 	return p
+}
+
+// findOrphans lists checkouts inside the target directory whose repository
+// the organization listing did not mention.
+//
+// It compares against req.Repos, the unfiltered listing, not against the
+// plan's entries: a repository skipped for being archived or a fork is still
+// present on the remote, and reporting it as gone would invite deleting a
+// live checkout. With --repos the listing is only a partial view of the org,
+// so no conclusion about what is missing is possible and none is drawn.
+func findOrphans(req Request, existing map[string]git.LocalRepo) []Orphan {
+	if req.Filter.Only != nil {
+		return nil
+	}
+	remote := make(map[string]bool, len(req.Repos))
+	for _, r := range req.Repos {
+		remote[strings.ToLower(r.Name)] = true
+	}
+	var out []Orphan
+	for lname, lr := range existing {
+		if !remote[lname] {
+			out = append(out, Orphan{Name: lr.Remote.Repo, Dir: lr.Path})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // classifyExisting decides whether an existing destination path already is

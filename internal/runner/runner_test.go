@@ -42,19 +42,37 @@ func TestRunOrderLimitAndCancel(t *testing.T) {
 			t.Errorf("result %d = %+v", i, r)
 		}
 	}
-	for i := 1; i < len(order); i++ {
-		if order[i] < order[i-1] {
-			t.Errorf("targets started out of order: %v", order)
-			break
+	// Run dispatches indexes to workers in order, but each worker emits its
+	// own Started event after receiving one, so two workers can interleave
+	// and no strict start ordering is guaranteed. Assert what Run does
+	// promise: every target starts exactly once.
+	if len(order) != len(targets) {
+		t.Errorf("got %d Started events, want %d: %v", len(order), len(targets), order)
+	}
+	seen := make(map[int]int, len(targets))
+	for _, idx := range order {
+		seen[idx]++
+	}
+	for i := range targets {
+		if seen[i] != 1 {
+			t.Errorf("target %d started %d times, want 1: %v", i, seen[i], order)
 		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	for _, r := range Run(ctx, targets, fn, 3, nil) {
+	var startedAfterCancel int32
+	for _, r := range Run(ctx, targets, fn, 3, func(ev Event) {
+		if ev.Started {
+			atomic.AddInt32(&startedAfterCancel, 1)
+		}
+	}) {
 		if r.Success || r.Error != "canceled" {
 			t.Errorf("canceled result = %+v", r)
 		}
+	}
+	if n := atomic.LoadInt32(&startedAfterCancel); n != 0 {
+		t.Errorf("%d targets started after cancel, want 0", n)
 	}
 	if got := Run(context.Background(), nil, fn, 0, nil); len(got) != 0 {
 		t.Errorf("no targets should yield no results, got %v", got)

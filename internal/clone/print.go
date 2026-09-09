@@ -77,3 +77,75 @@ func (p *Plan) Print(w io.Writer, protocol string, listAll bool) {
 	}
 	fmt.Fprintln(w)
 }
+
+// PrintOrphans reports checkouts the organization listing did not mention.
+// Nothing here is removed: pruning is a separate, explicitly requested step,
+// so this only ever tells the user what it found and how to act on it.
+func PrintOrphans(w io.Writer, orphans []Orphan, pruning bool) {
+	if len(orphans) == 0 {
+		return
+	}
+	var gone, renamed, unverified, present []Orphan
+	for _, o := range orphans {
+		switch o.Status {
+		case OrphanGone:
+			gone = append(gone, o)
+		case OrphanRenamed:
+			renamed = append(renamed, o)
+		case OrphanPresent:
+			present = append(present, o)
+		default:
+			unverified = append(unverified, o)
+		}
+	}
+
+	names := make([]string, len(orphans))
+	for i, o := range orphans {
+		names[i] = o.Name
+	}
+	nameW := report.NameColumnWidth(names, 12, 48)
+
+	if len(gone) > 0 {
+		fmt.Fprintf(w, "  %s %s\n", report.Paint("33", "⚠"),
+			report.Paint("33", fmt.Sprintf("%s here no longer on GitHub:", format.Plural(len(gone), "repo"))))
+		for _, o := range gone {
+			detail := "gone (404)"
+			if len(o.Blockers) > 0 {
+				detail += " · " + report.Paint("31", strings.Join(o.Blockers, ", "))
+			} else {
+				detail += " · clean, nothing unpushed"
+			}
+			fmt.Fprintf(w, "  %s %-*s  %s\n", report.Paint("33", "~"), nameW, o.Name, report.Paint("2", detail))
+		}
+		if !pruning {
+			fmt.Fprintf(w, "\n    %s\n", "These were NOT removed. To remove the clean ones:")
+			fmt.Fprintf(w, "    %s\n", report.Paint("2", "gitops init <org> --prune"))
+		}
+	}
+
+	// A repository that still resolves was never deleted; saying so matters
+	// more than the ones that were, because it is the case where a naive
+	// "not in the listing" check would have deleted live work.
+	if len(renamed) > 0 {
+		fmt.Fprintf(w, "\n  %s %s\n", report.Paint("2", "i"),
+			report.Paint("2", fmt.Sprintf("%s renamed or transferred on GitHub (kept):", format.Plural(len(renamed), "repo"))))
+		for _, o := range renamed {
+			fmt.Fprintf(w, "  %s %-*s  %s\n", report.Paint("2", "→"), nameW, o.Name, report.Paint("2", "now "+o.NewName))
+		}
+	}
+	if len(present) > 0 {
+		fmt.Fprintf(w, "\n  %s %s\n", report.Paint("2", "i"),
+			report.Paint("2", fmt.Sprintf("%s still on GitHub but absent from the listing (kept):", format.Plural(len(present), "repo"))))
+		for _, o := range present {
+			fmt.Fprintf(w, "  %s %-*s  %s\n", report.Paint("2", "="), nameW, o.Name, report.Paint("2", "visibility or filter"))
+		}
+	}
+	if len(unverified) > 0 {
+		fmt.Fprintf(w, "\n  %s %s\n", report.Paint("33", "?"),
+			report.Paint("33", fmt.Sprintf("%s could not be checked against GitHub (kept):", format.Plural(len(unverified), "repo"))))
+		for _, o := range unverified {
+			fmt.Fprintf(w, "  %s %-*s  %s\n", report.Paint("33", "?"), nameW, o.Name, report.Paint("2", o.Detail))
+		}
+	}
+	fmt.Fprintln(w)
+}

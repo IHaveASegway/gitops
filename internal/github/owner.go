@@ -82,5 +82,19 @@ func ParseOwner(input string) (OwnerRef, error) {
 	if !loginRE.MatchString(owner) {
 		return OwnerRef{}, fmt.Errorf("%q is not a valid GitHub login", owner)
 	}
-	return OwnerRef{Host: host, Owner: owner}, nil
+	return OwnerRef{Host: NormalizeHost(host), Owner: owner}, nil
+}
+
+// NormalizeHost canonicalizes a host name so that spellings which resolve to
+// the same GitHub host take the same code path. Every host decision keys off
+// this string — which token applies (FindToken) and which API base is used
+// (DefaultAPIBase) — so an un-normalized "www.github.com" would be treated as
+// a GitHub Enterprise host: the wrong API base, and a github.com token sent
+// to a host the docs promise it never reaches.
+func NormalizeHost(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if rest, ok := strings.CutPrefix(host, "www."); ok && rest == "github.com" {
+		host = rest
+	}
+	return host
 }
