@@ -124,6 +124,7 @@ gitops init acme --dry-run                 # show the plan, clone nothing
 gitops init acme -r crm,admin              # only these repos
 gitops init acme --archived --no-forks     # include archived, skip forks
 gitops init acme --protocol ssh            # clone over SSH
+gitops init acme --prune                   # also remove repos deleted on GitHub
 ```
 
 Accepts `https://github.com/acme`, `github.com/acme`, `acme`,
@@ -133,6 +134,30 @@ at the `origin` remotes around the target directory and, if the org already
 exists somewhere else (a differently-named folder, loose clones, or the
 directory you're standing in), it warns and suggests the `--here` command that
 tops up the existing checkout instead of duplicating it.
+
+**Keeping a checkout in sync.** Re-running `init` is how you pick up
+repositories added to the org since you cloned it. It also reports checkouts
+you still have that the org listing no longer mentions — but it never removes
+one on that basis alone, because absence from the listing is equally what a
+rename, a transfer, an archived repo under the default filters, or a token
+that quietly lost visibility looks like. Each one is looked up by name first,
+and only a `404` counts as deleted:
+
+```
+  ⚠ 2 repos here no longer on GitHub:
+  ~ legacy-etl        gone (404) · clean, nothing unpushed
+  ~ spike-branchwork  gone (404) · 2 uncommitted changes, 1 unpushed commit
+
+    These were NOT removed. To remove the clean ones:
+    gitops init <org> --prune
+```
+
+`--prune` removes only the ones confirmed deleted **and** holding nothing that
+exists solely on your machine. Uncommitted changes, stashes, commits absent
+from every remote, or a second remote all keep a checkout — it is reported
+instead, for you to deal with by hand. Renamed, still-visible and
+unverifiable repos are always kept. `--prune` cannot be combined with
+`--repos`, since a partial listing can't tell you what is gone.
 
 **Authentication:** `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth login` (github.com);
 `GH_ENTERPRISE_TOKEN` or `gh auth login --hostname <host>` for Enterprise.
@@ -150,6 +175,7 @@ to `.git/config` or a command line.
 | `--dry-run` | Print the plan and exit |
 | `-y, --yes` | Skip the confirmation prompt |
 | `--force` | Clone even if an existing checkout was detected |
+| `--prune` | Remove checkouts whose repo is confirmed deleted on GitHub |
 </details>
 
 ## Safety

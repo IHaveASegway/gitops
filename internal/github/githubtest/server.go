@@ -58,6 +58,28 @@ func NewServer(t testing.TB, org string, repos []github.Repo) *httptest.Server {
 			w.WriteHeader(http.StatusForbidden)
 			fmt.Fprint(w, `{"message":"API rate limit exceeded"}`)
 		default:
+			// Single-repo lookups, used to tell a deleted repository apart
+			// from one that was renamed or merely absent from the listing.
+			// "renamed-*" answers under a new name the way GitHub does after
+			// following its redirect; "forbidden-*" answers 403 to stand in
+			// for a repository the token cannot see.
+			if name, ok := strings.CutPrefix(r.URL.Path, "/repos/"+canonical+"/"); ok && name != "" {
+				switch {
+				case strings.HasPrefix(name, "renamed-"):
+					_ = enc.Encode(github.Repo{Name: "new-" + name, FullName: canonical + "/new-" + name})
+					return
+				case strings.HasPrefix(name, "forbidden-"):
+					w.WriteHeader(http.StatusForbidden)
+					fmt.Fprint(w, `{"message":"Must have admin rights"}`)
+					return
+				}
+				for _, repo := range repos {
+					if strings.EqualFold(repo.Name, name) {
+						_ = enc.Encode(repo)
+						return
+					}
+				}
+			}
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprint(w, `{"message":"Not Found"}`)
 		}

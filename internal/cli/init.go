@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -31,7 +32,15 @@ func initCommand() *cli.Command {
 		Description: `Lists every repository of the organization that your token can see and
 clones the ones you don't have yet into <dir>/<org>/. Existing checkouts of
 the same organization are detected first (by their origin remotes), so an
-org is never duplicated by accident.
+org is never duplicated by accident. Re-run it any time to pick up
+repositories that were added since.
+
+Checkouts here that the listing did not mention are reported, never removed.
+Each is looked up by name first, because absence from the listing is also
+what a rename, a transfer, an archived repository or a token that lost
+visibility looks like — only a 404 is treated as deleted. Pass --prune to
+remove the confirmed-deleted ones; any checkout holding uncommitted changes,
+stashes, unpushed commits or a second remote is kept and reported instead.
 
 Accepted forms: https://github.com/acme, github.com/acme, acme,
 git@github.com:acme/repo.git, https://ghe.example.com/acme
@@ -51,6 +60,7 @@ GITHUB_ENTERPRISE_TOKEN, or gh auth login --hostname <host>.`,
 			&cli.BoolFlag{Name: "dry-run", Usage: "Show what would be cloned and exit"},
 			&cli.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Do not ask for confirmation"},
 			&cli.BoolFlag{Name: "force", Usage: "Clone even if an existing checkout of the org was detected"},
+			&cli.BoolFlag{Name: "prune", Usage: "Also remove checkouts whose repository is confirmed deleted on GitHub (never removes one with local-only work)"},
 		},
 		Action: runInit,
 	}
@@ -133,6 +143,12 @@ func runInit(c *cli.Context) error {
 			only[strings.ToLower(n)] = true
 		}
 	}
+	// --repos lists a subset of the org, so every repository outside that
+	// subset would look missing. Nothing can be concluded about what is gone,
+	// and pruning on that basis would delete live checkouts.
+	if c.Bool("prune") && only != nil {
+		return errors.New("--prune cannot be combined with --repos: a partial listing cannot tell which repositories are gone")
+	}
 	plan := clone.BuildPlan(clone.Request{
 		BaseDir: baseDir,
 		Here:    c.Bool("here"),
@@ -148,16 +164,32 @@ func runInit(c *cli.Context) error {
 	if len(plan.Missing) > 0 {
 		return cli.Exit(fmt.Sprintf("no such repository in %s: %s", owner.Login, strings.Join(plan.Missing, ", ")), exitFailed)
 	}
+
+	// Checkouts the listing did not mention. Each is asked for by name before
+	// anything is said about it, so a rename, a filtered repository or a lost
+	// token is never reported as a deletion.
+	if len(plan.Orphans) > 0 {
+		plan.Orphans = clone.VerifyOrphans(ctx, client, owner.Login, plan.Orphans, c.Int("jobs"))
+		clone.PrintOrphans(os.Stdout, plan.Orphans, c.Bool("prune"))
+	}
+
 	if c.Bool("dry-run") {
 		return nil
 	}
+
+	interactive := isatty.IsTerminal(os.Stdin.Fd())
+	if c.Bool("prune") {
+		if err := pruneOrphans(ctx, c, plan.Orphans, ref.Host, owner.Login, interactive); err != nil {
+			return err
+		}
+	}
+
 	toClone := plan.ToClone()
 	if len(toClone) == 0 {
 		fmt.Println("  Nothing to clone.")
 		return nil
 	}
 
-	interactive := isatty.IsTerminal(os.Stdin.Fd())
 	target := format.ShortenPath(plan.TargetDir)
 	switch {
 	case plan.HasWarnings() && !c.Bool("force"):
@@ -234,4 +266,44 @@ func confirm(question string, defaultYes bool) bool {
 		return true
 	}
 	return false
+}
+
+// pruneOrphans removes the checkouts that verification confirmed are gone
+// and that hold no local-only work. Everything else the plan found is left
+// alone and was already reported, so this only ever acts on the subset the
+// user can see is safe.
+func pruneOrphans(ctx context.Context, c *cli.Context, orphans []clone.Orphan, host, owner string, interactive bool) error {
+	removable := clone.Removable(orphans)
+	if len(removable) == 0 {
+		return nil
+	}
+	names := make([]string, len(removable))
+	for i, o := range removable {
+		names[i] = o.Name
+	}
+	if !c.Bool("yes") {
+		if !interactive {
+			return cli.Exit("refusing to remove repositories without confirmation; pass --yes", exitRefused)
+		}
+		q := fmt.Sprintf("Remove %s no longer on GitHub (%s)?", format.Plural(len(removable), "repo"), strings.Join(names, ", "))
+		if !confirm(q, false) {
+			fmt.Println("  Kept.")
+			return nil
+		}
+	}
+	fmt.Println()
+	failed := 0
+	for _, o := range removable {
+		if err := clone.Remove(ctx, host, owner, o); err != nil {
+			failed++
+			fmt.Printf("  %s %s: %s\n", report.Paint("31", "✗"), o.Name, report.Paint("31", err.Error()))
+			continue
+		}
+		fmt.Printf("  %s %s  %s\n", report.Paint("32", "✓"), o.Name, report.Paint("2", "removed"))
+	}
+	fmt.Printf("\n  Removed %d of %s.\n", len(removable)-failed, format.Plural(len(removable), "repo"))
+	if failed > 0 {
+		return cli.Exit(fmt.Sprintf("%d repositories could not be removed", failed), exitFailed)
+	}
+	return nil
 }
