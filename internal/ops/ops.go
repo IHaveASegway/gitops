@@ -13,17 +13,27 @@ import (
 	"github.com/IHaveASegway/gitops/internal/runner"
 )
 
-// syncSubmodules updates repo's submodules (git submodule update --init
-// --recursive) when it declares any and skip is false. It returns a suffix
-// to append to a successful op's Output; a failed update is reported as a
-// warning rather than turning the whole operation into a failure, since the
-// primary checkout/pull already succeeded.
+// syncSubmodules moves repo's initialized submodules to the commits the
+// superproject records (git submodule update --recursive) unless skip is
+// set. There is deliberately no --init: like `git pull --recurse-submodules`,
+// it leaves alone any submodule the user never initialized, rather than
+// cloning every repository a superproject declares. It returns a suffix to
+// append to a successful op's Output, empty when no submodule moved; a
+// failed update is reported as a warning rather than turning the whole
+// operation into a failure, since the primary checkout/pull already
+// succeeded.
 func syncSubmodules(ctx context.Context, repo string, skip bool) string {
 	if skip || !git.HasSubmodules(repo) {
 		return ""
 	}
-	if _, err := git.Run(ctx, repo, "submodule", "update", "--init", "--recursive"); err != nil {
+	out, err := git.Run(ctx, repo, "submodule", "update", "--recursive")
+	if err != nil {
 		return fmt.Sprintf(" (warning: submodule update failed: %v)", err)
+	}
+	// git prints "Submodule path '…': checked out '…'" for each one it moved
+	// and nothing when all were current or none is initialized.
+	if out == "" {
+		return ""
 	}
 	return " + submodules updated"
 }

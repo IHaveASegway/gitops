@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-18
+
+### Fixed
+- `pull`, `sync`, `reset`, `branch` and `checkout` ran `git submodule update
+  --init --recursive`, so a single pull cloned every submodule a repository
+  declares — including the ones you had deliberately never initialized. In a
+  superproject that aggregates other repositories as submodules, that meant
+  dozens of full clones, each showing up as another repository in your
+  editor. They now run `git submodule update --recursive`, which, like `git
+  pull --recurse-submodules`, only moves the submodules you have initialized.
+  Initialize one once with `git submodule update --init <path>` to have it
+  kept in sync.
+- The result line claimed "submodules updated" for any repository with a
+  `.gitmodules` file, even when nothing was initialized or nothing moved. It
+  now appears only when a submodule was actually checked out at a new commit.
+
 ## [1.2.0] - 2026-09-09
 
 ### Added
@@ -147,7 +163,8 @@ All notable changes to this project are documented here. The format follows
 - Initial release: `pull`, `sync`, `reset`, `branch`, `push`, `checkout` and
   `status` across every repository in a directory, with an interactive TUI.
 
-[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/IHaveASegway/gitops/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/IHaveASegway/gitops/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/IHaveASegway/gitops/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/IHaveASegway/gitops/compare/v0.1.0...v1.0.0

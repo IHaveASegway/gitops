@@ -109,7 +109,7 @@ func yesFlag() cli.Flag {
 }
 
 func skipSubmodulesFlag() cli.Flag {
-	return &cli.BoolFlag{Name: "skip-submodules", Usage: "Do not update submodules (git submodule update --init --recursive)"}
+	return &cli.BoolFlag{Name: "skip-submodules", Usage: "Do not update initialized submodules (git submodule update --recursive)"}
 }
 
 // opCommand describes one mass-git subcommand.
