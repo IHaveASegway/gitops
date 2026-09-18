@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-18
+
+### Fixed
+- `push` failed with "The following paths are ignored by one of your
+  .gitignore files: .DS_Store" — committing nothing — in any repository
+  that gitignores `.DS_Store` (in its own `.gitignore` or a global excludes
+  file) and had one at the top level next to a real change. The junk
+  exclusion used a literal `:(exclude).DS_Store` pathspec, which git reads
+  as naming the ignored file. It is now a single wildcard glob,
+  `:(exclude,glob)**/.DS_Store`, which covers every depth and never names a
+  file. Present since 1.1.0.
+- Tests no longer read the developer's global git configuration or excludes
+  file, which could make them fail on a machine that ignores `.DS_Store`
+  globally.
+
 ## [1.2.1] - 2026-09-18
 
 ### Fixed
@@ -163,7 +178,8 @@ All notable changes to this project are documented here. The format follows
 - Initial release: `pull`, `sync`, `reset`, `branch`, `push`, `checkout` and
   `status` across every repository in a directory, with an interactive TUI.
 
-[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/IHaveASegway/gitops/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/IHaveASegway/gitops/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/IHaveASegway/gitops/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/IHaveASegway/gitops/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/IHaveASegway/gitops/compare/v1.0.0...v1.1.0

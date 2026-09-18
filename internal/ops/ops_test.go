@@ -259,6 +259,53 @@ func TestPushNeverCommitsJunkFiles(t *testing.T) {
 	}
 }
 
+// TestPushWithIgnoredJunk covers the usual setup, where .DS_Store is
+// gitignored by the repository or by the user's global excludes file. The
+// junk exclusion once used a literal ":(exclude).DS_Store" pathspec, which
+// git read as naming the ignored root file: `git add` refused ("paths are
+// ignored") and push failed in any such repository holding a Finder-dropped
+// .DS_Store next to a real change.
+func TestPushWithIgnoredJunk(t *testing.T) {
+	ctx := context.Background()
+	ignoredBy := map[string]func(t *testing.T, repo string){
+		"repository .gitignore": func(t *testing.T, repo string) {
+			mustWrite(t, filepath.Join(repo, ".gitignore"), ".DS_Store\n")
+			testutil.Git(t, repo, "add", ".gitignore")
+			testutil.Git(t, repo, "commit", "-qm", "ignore junk")
+		},
+		"global excludes file": func(t *testing.T, _ string) {
+			dir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(dir, "ignore"), ".DS_Store\n")
+		},
+	}
+	for label, ignore := range ignoredBy {
+		t.Run(label, func(t *testing.T) {
+			repo := clone(t)
+			ignore(t, repo)
+			if err := os.MkdirAll(filepath.Join(repo, "sub"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(repo, ".DS_Store"), "x")
+			mustWrite(t, filepath.Join(repo, "sub", ".DS_Store"), "x")
+
+			if r := Push("junk only")(ctx, repo); !r.Success || !strings.HasPrefix(r.Output, "nothing to commit") {
+				t.Errorf("junk-only push = %+v", r)
+			}
+			mustWrite(t, filepath.Join(repo, "sub", "real.txt"), "content")
+			if r := Push("real change")(ctx, repo); !r.Success || r.Output != "pushed to main" {
+				t.Fatalf("push = %+v", r)
+			}
+			tracked := testutil.Git(t, repo, "ls-files")
+			if strings.Contains(tracked, ".DS_Store") || !strings.Contains(tracked, "sub/real.txt") {
+				t.Errorf("committed files:\n%s", tracked)
+			}
+		})
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
