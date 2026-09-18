@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/IHaveASegway/gitops/internal/runner"
 	"github.com/IHaveASegway/gitops/internal/testutil"
 )
 
@@ -55,43 +56,120 @@ func TestStatusSyncResetPull(t *testing.T) {
 	}
 }
 
-// TestPullUpdatesSubmodulesUnlessSkipped clones a repo whose submodule is
-// registered but not yet checked out (as after a plain, non-recursive
-// clone) and confirms Pull initializes it, while skipSubmodules leaves it
-// alone.
-func TestPullUpdatesSubmodulesUnlessSkipped(t *testing.T) {
+// superproject is a repository declaring two submodules, vendor/a and
+// vendor/b, published to a bare upstream.
+type superproject struct {
+	root  string // temp dir holding every repository
+	work  string // where the superproject is authored; publishes to bare
+	bare  string // the superproject's upstream
+	clone string // a plain (non-recursive) clone: submodules registered, none initialized
+}
+
+func newSuperproject(t *testing.T) superproject {
+	t.Helper()
 	testutil.Identity(t)
-	t.Setenv("GIT_ALLOW_PROTOCOL", "file") // the submodule's origin is a local file:// path
-	ctx := context.Background()
+	t.Setenv("GIT_ALLOW_PROTOCOL", "file") // the submodules' origins are local file:// paths
 	root := t.TempDir()
+	s := superproject{root: root, work: filepath.Join(root, "work"), bare: filepath.Join(root, "parent.git"), clone: filepath.Join(root, "clone")}
 
-	libBare := testutil.NewBare(t, root, "lib")
+	testutil.NewRepo(t, s.work, "", true)
+	for _, name := range []string{"a", "b"} {
+		lib := testutil.NewBare(t, root, name)
+		testutil.Git(t, s.work, "-c", "protocol.file.allow=always", "submodule", "-q", "add", lib, "vendor/"+name)
+	}
+	testutil.Git(t, s.work, "commit", "-qm", "add submodules")
+	testutil.Git(t, root, "clone", "-q", "--bare", s.work, s.bare)
+	testutil.Git(t, root, "clone", "-q", s.bare, s.clone)
+	testutil.Git(t, s.clone, "config", "core.autocrlf", "false")
+	return s
+}
 
-	work := filepath.Join(root, "work")
-	testutil.NewRepo(t, work, "", true)
-	testutil.Git(t, work, "-c", "protocol.file.allow=always", "submodule", "-q", "add", libBare, "vendor/lib")
-	testutil.Git(t, work, "commit", "-qm", "add submodule")
-	parentBare := filepath.Join(root, "parent.git")
-	testutil.Git(t, root, "clone", "-q", "--bare", work, parentBare)
+// advance commits to submodule name's upstream and publishes a
+// superproject commit recording it, returning the new submodule commit.
+func (s superproject) advance(t *testing.T, name string) string {
+	t.Helper()
+	lib := filepath.Join(s.root, "work-"+name)
+	mustWrite(t, filepath.Join(lib, "README.md"), "v2\n")
+	testutil.Git(t, lib, "commit", "-qam", "v2")
+	testutil.Git(t, lib, "push", "-q", filepath.Join(s.root, name+".git"), "main")
 
-	repo := filepath.Join(root, "clone")
-	testutil.Git(t, root, "clone", "-q", parentBare, repo)
-	testutil.Git(t, repo, "config", "core.autocrlf", "false")
+	sub := filepath.Join(s.work, "vendor", name)
+	testutil.Git(t, sub, "pull", "-q", "origin", "main")
+	testutil.Git(t, s.work, "commit", "-qam", "bump "+name)
+	testutil.Git(t, s.work, "push", "-q", s.bare, "main")
+	return head(t, sub)
+}
 
-	subGit := filepath.Join(repo, "vendor", "lib", ".git")
+func head(t *testing.T, repo string) string {
+	t.Helper()
+	return strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD"))
+}
 
-	if r := Pull(true)(ctx, repo); !r.Success || strings.Contains(r.Output, "submodule") {
+// populated reports whether a submodule has been cloned into its path.
+func populated(path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil
+}
+
+// TestOpsNeverInitializeSubmodules guards against the 1.2.0 regression:
+// every op ran `git submodule update --init`, so one pull cloned each
+// submodule a superproject declared, including the ones its owner had
+// deliberately left uninitialized.
+func TestOpsNeverInitializeSubmodules(t *testing.T) {
+	ctx := context.Background()
+	cases := map[string]runner.Func{
+		"pull":     Pull(false),
+		"sync":     Sync(false),
+		"reset":    Reset(false),
+		"branch":   CreateBranch("feature/x", false),
+		"checkout": Checkout("main", false),
+	}
+	for name, op := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newSuperproject(t)
+			if r := op(ctx, s.clone); !r.Success || strings.Contains(r.Output, "submodule") {
+				t.Fatalf("%s = %+v", name, r)
+			}
+			for _, sub := range []string{"a", "b"} {
+				if populated(filepath.Join(s.clone, "vendor", sub)) {
+					t.Errorf("%s initialized vendor/%s, which was never initialized", name, sub)
+				}
+			}
+		})
+	}
+}
+
+// TestPullUpdatesInitializedSubmodules checks that Pull moves an initialized
+// submodule to the commit the superproject now records and leaves an
+// uninitialized sibling alone, that skipSubmodules does neither, and that
+// "submodules updated" is only claimed when one actually moved.
+func TestPullUpdatesInitializedSubmodules(t *testing.T) {
+	ctx := context.Background()
+	s := newSuperproject(t)
+	testutil.Git(t, s.clone, "-c", "protocol.file.allow=always", "submodule", "-q", "update", "--init", "vendor/a")
+	subA := filepath.Join(s.clone, "vendor", "a")
+	before := head(t, subA)
+	want := s.advance(t, "a")
+
+	if r := Pull(true)(ctx, s.clone); !r.Success || strings.Contains(r.Output, "submodule") {
 		t.Fatalf("pull (skip-submodules) = %+v", r)
 	}
-	if _, err := os.Stat(subGit); err == nil {
-		t.Error("skip-submodules should leave the submodule uninitialized")
+	if got := head(t, subA); got != before {
+		t.Errorf("skip-submodules moved vendor/a to %s", got)
 	}
 
-	if r := Pull(false)(ctx, repo); !r.Success || !strings.Contains(r.Output, "submodules updated") {
+	if r := Pull(false)(ctx, s.clone); !r.Success || !strings.HasSuffix(r.Output, " + submodules updated") {
 		t.Errorf("pull = %+v", r)
 	}
-	if _, err := os.Stat(subGit); err != nil {
-		t.Error("submodule should be initialized after pull")
+	if got := head(t, subA); got != want {
+		t.Errorf("vendor/a is at %s, want the recorded %s", got, want)
+	}
+	if populated(filepath.Join(s.clone, "vendor", "b")) {
+		t.Error("pull initialized vendor/b")
+	}
+
+	if r := Pull(false)(ctx, s.clone); !r.Success || r.Output != "Already up to date." {
+		t.Errorf("pull with nothing to update = %+v", r)
 	}
 }
 

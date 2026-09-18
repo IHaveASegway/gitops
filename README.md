@@ -106,7 +106,7 @@ plain and colorless when piped, so it composes cleanly.
 
 Common flags: `-d/--dir` (target directory), `-r/--repos a,b,c` (a subset),
 `-j/--jobs` (parallelism), `-y/--yes` (skip confirmation), `--skip-submodules`
-(don't update submodules on `pull`/`sync`/`reset`/`branch`/`checkout`). Flags
+(don't update initialized submodules on `pull`/`sync`/`reset`/`branch`/`checkout`). Flags
 may come before or after arguments.
 
 ```bash
@@ -197,7 +197,7 @@ gitops can touch dozens of repositories at once, so the sharp edges are guarded:
 ## How it works
 
 - Discovers git repositories one level below the target directory (worktrees and submodules included).
-- `pull`, `sync`, `reset`, `branch` and `checkout` run `git submodule update --init --recursive` afterward when a repo has submodules; pass `--skip-submodules` to leave them alone.
+- `pull`, `sync`, `reset`, `branch` and `checkout` then move the submodules you have initialized to the commits the repo records (`git submodule update --recursive`). Submodules you never initialized are left alone — run `git submodule update --init <path>` once for any you want kept in sync; pass `--skip-submodules` to leave all of them alone.
 - Detects each repo's default branch via `origin/HEAD`, then `main`/`master`.
 - Runs with a bounded worker pool (`--jobs`); Ctrl-C kills in-flight git, never orphans it.
 - git never prompts for credentials (`GIT_TERMINAL_PROMPT=0`), so a repo you can't reach fails fast instead of hanging the batch.
