@@ -74,11 +74,17 @@ func FileURL(p string) string {
 
 // Identity gives git an author/committer for the rest of the test so that
 // commits made by the code under test work on machines without a global
-// git configuration (such as CI runners).
+// git configuration (such as CI runners). It also hides the developer's own
+// global configuration and excludes file (~/.gitconfig, ~/.config/git/*),
+// so a personal ignore rule cannot change what the code under test stages
+// or reports; a test can opt into one by writing
+// $XDG_CONFIG_HOME/git/ignore.
 func Identity(t testing.TB) {
 	t.Helper()
 	t.Setenv("GIT_AUTHOR_NAME", "t")
 	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "t")
 	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 }

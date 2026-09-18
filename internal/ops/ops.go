@@ -171,8 +171,12 @@ var junkNames = []string{".DS_Store"}
 var addArgs = func() []string {
 	args := []string{"add", "-A", "--", "."}
 	for _, n := range junkNames {
-		// Default pathspec wildcards match "/" too, so */NAME covers any depth.
-		args = append(args, ":(exclude)"+n, ":(exclude)*/"+n)
+		// "**/" matches the top level too, so one pattern covers any depth.
+		// It must lead with a wildcard: git reads an exclude pathspec
+		// without one (":(exclude).DS_Store") as naming that file, and when
+		// the file is gitignored — as .DS_Store usually is — `git add`
+		// refuses with "paths are ignored" and stages nothing at all.
+		args = append(args, ":(exclude,glob)**/"+n)
 	}
 	return args
 }()
